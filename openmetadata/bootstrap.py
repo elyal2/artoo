@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import logging
 import os
 
@@ -10,8 +11,6 @@ from artoo.config import settings
 from artoo.logging import configure_logging
 
 logger = logging.getLogger(__name__)
-
-BOOTSTRAP_ADMIN_TOKEN = os.environ.get("OPENMETADATA_BOOTSTRAP_TOKEN", "ingestion-bot")
 
 
 async def wait_for_health(url: str) -> None:
@@ -28,16 +27,33 @@ async def wait_for_health(url: str) -> None:
     raise RuntimeError("OpenMetadata not healthy after timeout")
 
 
-def _auth_headers() -> dict[str, str]:
-    headers = {"Content-Type": "application/json"}
-    token = settings.openmetadata_api_token or BOOTSTRAP_ADMIN_TOKEN
-    if token:
-        headers["Authorization"] = f"Bearer {token}"
-    return headers
+async def get_jwt_token(url: str) -> str:
+    """Login as admin and return a JWT token."""
+    # Per OM docs: password must be base64-encoded
+    password = base64.b64encode(b"admin").decode()
+    async with httpx.AsyncClient(timeout=10) as client:
+        resp = await client.post(
+            f"{url}/api/v1/users/login",
+            headers={"Content-Type": "application/json"},
+            json={"email": "admin@open-metadata.org", "password": password},
+        )
+        resp.raise_for_status()
+        token = resp.json().get("accessToken")
+        if not token:
+            raise RuntimeError(f"No accessToken in login response: {resp.json()}")
+        logger.info("Obtained JWT token from OpenMetadata admin login")
+        return str(token)
 
 
-async def ensure_postgres_service(client: httpx.AsyncClient) -> str:
-    pg_password = os.environ.get("POSTGRES_PASSWORD", "artoo_demo")
+def _auth_headers(token: str) -> dict[str, str]:
+    return {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {token}",
+    }
+
+
+async def ensure_postgres_service(client: httpx.AsyncClient, om_url: str, token: str) -> str:
+    pg_password = os.environ.get("ARTOO_DB_PASSWORD", "artoo_demo")
     payload = {
         "name": "hotel-demo-postgres",
         "serviceType": "Postgres",
@@ -47,14 +63,13 @@ async def ensure_postgres_service(client: httpx.AsyncClient) -> str:
                 "hostPort": "postgresql:5432",
                 "database": "hotel_demo",
                 "username": "artoo_demo",
-                "password": pg_password,
-                "scheme": "postgresql+psycopg2",
+                "authType": {"password": pg_password},
             }
         },
     }
     resp = await client.post(
-        f"{settings.openmetadata_url}/api/v1/services/databaseServices",
-        headers=_auth_headers(),
+        f"{om_url}/api/v1/services/databaseServices",
+        headers=_auth_headers(token),
         json=payload,
     )
     if resp.status_code not in {200, 201, 409}:
@@ -63,19 +78,24 @@ async def ensure_postgres_service(client: httpx.AsyncClient) -> str:
     service_id = data.get("id")
     if not service_id:
         existing = await client.get(
-            f"{settings.openmetadata_url}/api/v1/services/databaseServices/name/hotel-demo-postgres",
-            headers=_auth_headers(),
+            f"{om_url}/api/v1/services/databaseServices/name/hotel-demo-postgres",
+            headers=_auth_headers(token),
         )
         existing.raise_for_status()
         service_id = existing.json()["id"]
     return str(service_id)
 
 
-async def trigger_ingestion(client: httpx.AsyncClient, service_id: str) -> None:
+async def trigger_ingestion(
+    client: httpx.AsyncClient, om_url: str, token: str, service_id: str
+) -> None:
     payload = {
         "name": "hotel-demo-metadata-ingestion",
         "pipelineType": "metadata",
-        "service": {"id": service_id},
+        "service": {"id": service_id, "type": "databaseService"},
+        "airflowConfig": {
+            "scheduleInterval": "0 * * * *",
+        },
         "sourceConfig": {
             "config": {
                 "type": "DatabaseMetadata",
@@ -86,8 +106,8 @@ async def trigger_ingestion(client: httpx.AsyncClient, service_id: str) -> None:
         },
     }
     resp = await client.post(
-        f"{settings.openmetadata_url}/api/v1/services/ingestionPipelines",
-        headers=_auth_headers(),
+        f"{om_url}/api/v1/services/ingestionPipelines",
+        headers=_auth_headers(token),
         json=payload,
     )
     if resp.status_code not in {200, 201, 409}:
@@ -95,22 +115,43 @@ async def trigger_ingestion(client: httpx.AsyncClient, service_id: str) -> None:
     data = resp.json()
     pipeline_id = data.get("id")
     if pipeline_id:
+        # Deploy the pipeline to Airflow first, then trigger the run
+        deploy_resp = await client.post(
+            f"{om_url}/api/v1/services/ingestionPipelines/deploy/{pipeline_id}",
+            headers=_auth_headers(token),
+        )
+        if deploy_resp.status_code not in {200, 201}:
+            logger.warning("Pipeline deploy returned %s", deploy_resp.status_code)
+            return
+        logger.info("Pipeline deployed to Airflow")
+        # Give Airflow a few seconds to register the DAG
+        await asyncio.sleep(10)
         run_resp = await client.post(
-            f"{settings.openmetadata_url}/api/v1/services/ingestionPipelines/run/{pipeline_id}",
-            headers=_auth_headers(),
+            f"{om_url}/api/v1/services/ingestionPipelines/run/{pipeline_id}",
+            headers=_auth_headers(token),
         )
         if run_resp.status_code not in {200, 201}:
-            logger.warning("Ingestion trigger returned %s", run_resp.status_code)
+            logger.warning(
+                "Ingestion trigger returned %s — run it manually from Airflow UI (http://localhost:8080)",
+                run_resp.status_code,
+            )
+        else:
+            logger.info("Ingestion pipeline triggered successfully")
 
 
 async def main() -> None:
     configure_logging()
-    om_url = str(settings.openmetadata_url)
+    om_url = str(settings.openmetadata_url).rstrip("/")
     await wait_for_health(om_url)
+    token = await get_jwt_token(om_url)
     async with httpx.AsyncClient(timeout=30) as client:
-        service_id = await ensure_postgres_service(client)
-        await trigger_ingestion(client, service_id)
+        service_id = await ensure_postgres_service(client, om_url, token)
+        await trigger_ingestion(client, om_url, token, service_id)
     logger.info("OpenMetadata bootstrap complete")
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
 
 
 if __name__ == "__main__":

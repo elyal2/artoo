@@ -3,7 +3,7 @@ from __future__ import annotations
 from enum import Enum
 from typing import Literal, Optional
 
-from pydantic import AnyUrl, Field
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -34,7 +34,7 @@ class Settings(BaseSettings):
     postgres_password: Optional[str] = Field(default=None)
 
     # OpenMetadata
-    openmetadata_url: AnyUrl = Field(default="http://openmetadata-server:8585")
+    openmetadata_url: str = Field(default="http://openmetadata-server:8585")
     openmetadata_api_token: Optional[str] = Field(default=None)
 
     # API settings

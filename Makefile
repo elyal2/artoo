@@ -1,4 +1,4 @@
-.PHONY: up down seed enrich api bootstrap demo demo-full _demo-banner logs ps help test lint
+.PHONY: up down seed enrich api bootstrap crawl demo demo-full _demo-banner logs ps help test lint
 
 COMPOSE_FILES=-f docker-compose.yml
 
@@ -20,6 +20,7 @@ help:
 	@echo "make down      - baja todo y volúmenes"
 
 up:
+	docker compose $(COMPOSE_FILES) build artoo-api artoo-enricher superset
 	docker compose $(COMPOSE_FILES) up -d
 
 ps:
@@ -29,12 +30,14 @@ logs:
 	docker compose $(COMPOSE_FILES) logs -f
 
 seed:
+	docker compose $(COMPOSE_FILES) build artoo-api
 	docker compose $(COMPOSE_FILES) up -d postgresql
 	@echo "Waiting for PostgreSQL..."
 	@sleep 3
 	docker compose $(COMPOSE_FILES) run --rm artoo-api uv run python postgres/seed.py
 
 bootstrap:
+	docker compose $(COMPOSE_FILES) build artoo-enricher
 	@echo "Waiting for OpenMetadata to be healthy..."
 	@for i in $$(seq 1 30); do \
 		curl -sf http://localhost:8585/api/v1/system/version > /dev/null && break; \
@@ -42,7 +45,20 @@ bootstrap:
 	done
 	docker compose $(COMPOSE_FILES) run --rm artoo-enricher uv run python -m artoo.enricher --bootstrap-only
 
+crawl:
+	@echo "Running metadata ingestion directly via CLI (bypassing Airflow)..."
+	@TOKEN=$$(curl -sf -X POST http://localhost:8585/api/v1/users/login \
+		-H 'Content-Type: application/json' \
+		-d '{"email":"admin@open-metadata.org","password":"YWRtaW4="}' \
+		| python3 -c 'import sys,json; print(json.load(sys.stdin)["accessToken"])') && \
+	docker exec \
+		-e OPENMETADATA_INGEST_TOKEN=$$TOKEN \
+		-e ARTOO_DB_PASSWORD=$${ARTOO_DB_PASSWORD:-artoo_demo} \
+		openmetadata_ingestion \
+		bash -c 'envsubst < /opt/openmetadata/ingest.yaml > /tmp/ingest.yaml && metadata ingest -c /tmp/ingest.yaml'
+
 enrich:
+	docker compose $(COMPOSE_FILES) build artoo-enricher
 	docker compose $(COMPOSE_FILES) run --rm artoo-enricher
 
 api:
@@ -56,10 +72,10 @@ lint:
 	uv run ruff format .
 	uv run mypy src/
 
-demo: up seed bootstrap api
+demo: up seed bootstrap crawl api
 	@$(MAKE) _demo-banner
 
-demo-full: up seed bootstrap enrich api
+demo-full: up seed bootstrap crawl enrich api
 	@$(MAKE) _demo-banner
 
 _demo-banner:
@@ -73,4 +89,7 @@ _demo-banner:
 	@echo "╚══════════════════════════════════════════╝"
 
 down:
-	docker compose $(COMPOSE_FILES) down -v
+	docker compose $(COMPOSE_FILES) down -v --remove-orphans
+	@docker run --rm -v "$(PWD)/docker-volume:/data" --user root alpine \
+		sh -c "rm -rf /data/db-data-postgres" 2>/dev/null && echo "Cleaned db-data-postgres" || \
+		echo "⚠️  Could not remove docker-volume/db-data-postgres — run: sudo rm -rf docker-volume/db-data-postgres"

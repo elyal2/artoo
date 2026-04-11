@@ -25,13 +25,14 @@ services:
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: password
+      ARTOO_DB_PASSWORD: ${ARTOO_DB_PASSWORD:-artoo_demo}
     expose:
       - 5432
     ports:
       - "5432:5432"
     volumes:
       - ./docker-volume/db-data-postgres:/var/lib/postgresql/data
-      - ./postgres/init.sql:/docker-entrypoint-initdb.d/02-hotel.sql
+      - ./postgres/init.sh:/docker-entrypoint-initdb.d/02-hotel.sh
     networks:
       - app_net
     healthcheck:
@@ -40,13 +41,17 @@ services:
       timeout: 10s
       retries: 10
 
-  elasticsearch:
-    container_name: openmetadata_elasticsearch
-    image: docker.elastic.co/elasticsearch/elasticsearch:9.3.0
+  # OpenSearch (Docker Hub): mismo criterio que el compose de desarrollo de OpenMetadata 1.12.x;
+  # evita pulls lentos o timeouts desde docker.elastic.co (Elasticsearch 9.x).
+  opensearch:
+    container_name: openmetadata_opensearch
+    image: opensearchproject/opensearch:3.4.0
     environment:
       - discovery.type=single-node
       - ES_JAVA_OPTS=-Xms1024m -Xmx1024m
-      - xpack.security.enabled=false
+      - plugins.security.disabled=true
+      - OPENSEARCH_INITIAL_ADMIN_PASSWORD=${OPENSEARCH_INITIAL_ADMIN_PASSWORD:-OpenMetadata_password123!!!}
+      - indices.query.bool.max_clause_count=4096
     networks:
       - app_net
     ports:
@@ -58,7 +63,7 @@ services:
       timeout: 10s
       retries: 10
     volumes:
-      - es-data:/usr/share/elasticsearch/data
+      - es-data:/usr/share/opensearch/data
 
   execute-migrate-all:
     container_name: execute_migrate_all
@@ -175,12 +180,12 @@ services:
       DB_PORT: ${DB_PORT:-5432}
       OM_DATABASE: ${OM_DATABASE:-openmetadata_db}
       # ElasticSearch Configurations
-      ELASTICSEARCH_HOST: ${ELASTICSEARCH_HOST:- elasticsearch}
+      ELASTICSEARCH_HOST: ${ELASTICSEARCH_HOST:-opensearch}
       ELASTICSEARCH_PORT: ${ELASTICSEARCH_PORT:-9200}
       ELASTICSEARCH_SCHEME: ${ELASTICSEARCH_SCHEME:-http}
       ELASTICSEARCH_USER: ${ELASTICSEARCH_USER:-""}
       ELASTICSEARCH_PASSWORD: ${ELASTICSEARCH_PASSWORD:-""}
-      SEARCH_TYPE: ${SEARCH_TYPE:- "elasticsearch"}
+      SEARCH_TYPE: ${SEARCH_TYPE:- "opensearch"}
       ELASTICSEARCH_TRUST_STORE_PATH: ${ELASTICSEARCH_TRUST_STORE_PATH:-""}
       ELASTICSEARCH_TRUST_STORE_PASSWORD: ${ELASTICSEARCH_TRUST_STORE_PASSWORD:-""}
       ELASTICSEARCH_CONNECTION_TIMEOUT_SECS: ${ELASTICSEARCH_CONNECTION_TIMEOUT_SECS:-5}
@@ -277,7 +282,7 @@ services:
       WEB_CONF_CACHE_CONTROL: ${WEB_CONF_CACHE_CONTROL:-""}
       WEB_CONF_PRAGMA: ${WEB_CONF_PRAGMA:-""}
     depends_on:
-      elasticsearch:
+      opensearch:
         condition: service_healthy
       postgresql:
         condition: service_healthy
@@ -396,12 +401,12 @@ services:
       DB_PORT: ${DB_PORT:-5432}
       OM_DATABASE: ${OM_DATABASE:-openmetadata_db}
       # ElasticSearch Configurations
-      ELASTICSEARCH_HOST: ${ELASTICSEARCH_HOST:- elasticsearch}
+      ELASTICSEARCH_HOST: ${ELASTICSEARCH_HOST:-opensearch}
       ELASTICSEARCH_PORT: ${ELASTICSEARCH_PORT:-9200}
       ELASTICSEARCH_SCHEME: ${ELASTICSEARCH_SCHEME:-http}
       ELASTICSEARCH_USER: ${ELASTICSEARCH_USER:-""}
       ELASTICSEARCH_PASSWORD: ${ELASTICSEARCH_PASSWORD:-""}
-      SEARCH_TYPE: ${SEARCH_TYPE:- "elasticsearch"}
+      SEARCH_TYPE: ${SEARCH_TYPE:- "opensearch"}
       ELASTICSEARCH_TRUST_STORE_PATH: ${ELASTICSEARCH_TRUST_STORE_PATH:-""}
       ELASTICSEARCH_TRUST_STORE_PASSWORD: ${ELASTICSEARCH_TRUST_STORE_PASSWORD:-""}
       ELASTICSEARCH_CONNECTION_TIMEOUT_SECS: ${ELASTICSEARCH_CONNECTION_TIMEOUT_SECS:-5}
@@ -493,7 +498,7 @@ services:
       - "8585:8585"
       - "8586:8586"
     depends_on:
-      elasticsearch:
+      opensearch:
         condition: service_healthy
       postgresql:
         condition: service_healthy
@@ -508,7 +513,7 @@ services:
     container_name: openmetadata_ingestion
     image: docker.getcollate.io/openmetadata/ingestion:1.12.4
     depends_on:
-      elasticsearch:
+      opensearch:
         condition: service_started
       postgresql:
         condition: service_healthy
@@ -547,15 +552,18 @@ services:
       - ingestion-volume-dag-airflow:/opt/airflow/dag_generated_configs
       - ingestion-volume-dags:/opt/airflow/dags
       - ingestion-volume-tmp:/tmp
+      - ./openmetadata/ingest.yaml:/opt/openmetadata/ingest.yaml:ro
 
   superset:
-    image: apache/superset:latest
+    build:
+      context: ./superset
+      dockerfile: Dockerfile
     container_name: artoo_superset
     entrypoint:
       [
-        "/bin/sh",
+        "/bin/bash",
         "-c",
-        "/app/docker/docker-init.sh && /app/superset/bootstrap.sh && superset run -h 0.0.0.0 -p 8088",
+        "/app/superset/bootstrap.sh && superset run -h 0.0.0.0 -p 8088",
       ]
     ports:
       - "8088:8088"
@@ -564,11 +572,13 @@ services:
     environment:
       SUPERSET_SECRET_KEY: artoo-demo-key
       SUPERSET_DATABASE_URI: ${SUPERSET_DATABASE_URI:-postgresql://artoo_demo:artoo_demo@postgresql:5432/superset}
+      HOTEL_DEMO_URI: ${HOTEL_DEMO_URI:-postgresql+psycopg2://artoo_demo:artoo_demo@postgresql:5432/hotel_demo}
       MAPBOX_API_KEY: ""
     networks:
       - app_net
     volumes:
       - ./superset/bootstrap.sh:/app/superset/bootstrap.sh:ro
+      - ./superset/imports:/app/superset/imports:ro
 
   artoo-enricher:
     build:
@@ -579,6 +589,8 @@ services:
       - postgresql
       - openmetadata-server
     restart: "no"
+    profiles:
+      - tools
     networks:
       - app_net
 

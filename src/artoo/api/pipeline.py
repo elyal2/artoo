@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 
 import asyncpg
 
@@ -10,6 +11,15 @@ from ..llm.client import LLMClient
 from ..llm.prompts import QUERY_SYSTEM_PROMPT
 from ..models import QueryResponse, SQLResponse, TableDetail
 from .validator import validate_sql
+
+
+def _strip_markdown(text: str) -> str:
+    """Remove markdown code fences (```json ... ```) from LLM output."""
+    text = text.strip()
+    match = re.search(r"```(?:json)?\s*([\s\S]+?)\s*```", text)
+    if match:
+        return match.group(1).strip()
+    return text
 
 
 class QueryPipeline:
@@ -27,7 +37,9 @@ class QueryPipeline:
     async def _schema_context(self, tables: list[TableDetail]) -> str:
         parts: list[str] = []
         for table in tables:
-            lines = [f"TABLE: {table.name} — {table.description or ''}"]
+            # Use only the short table name for SQL, not the full OM qualified name
+            short_name = table.name.split(".")[-1]
+            lines = [f"TABLE: {short_name} — {table.description or ''}"]
             if table.business_domain:
                 lines.append(f"Business domain: {table.business_domain}")
             lines.append("COLUMNS:")
@@ -49,13 +61,17 @@ class QueryPipeline:
 
     async def query(self, question: str) -> QueryResponse:
         tables = await self.catalog.semantic_search(question, n_results=5)
+        if not tables:
+            # Fallback: use all known tables if search index is empty
+            summaries = await self.catalog.list_tables()
+            tables = [await self.catalog.get_table(s.name) for s in summaries[:10]]
         context = await self._schema_context(tables)
 
         sql_candidate = await self.llm.complete(
             system=QUERY_SYSTEM_PROMPT,
             user=f"Question: {question}\nSchema:\n{context}",
         )
-        parsed = SQLResponse.model_validate_json(sql_candidate)
+        parsed = SQLResponse.model_validate_json(_strip_markdown(sql_candidate))
         sql = validate_sql(parsed.sql)
 
         pool = await self._ensure_pool()

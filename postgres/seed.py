@@ -15,8 +15,7 @@ fake = Faker()
 
 def _dsn() -> str:
     raw = settings.postgres_dsn
-    dsn = raw.replace("+psycopg2", "")
-    return dsn.replace("postgres:5432", "localhost:5432")
+    return raw.replace("+psycopg2", "")
 
 
 async def seed() -> None:
@@ -50,7 +49,14 @@ async def seed() -> None:
     props = []
     for idx, (city, country) in enumerate(cities, start=1):
         props.append(
-            (f"Logicalis Hotel {city}", city, country, random.randint(3, 5), random.randint(80, 220), random.choice(["RESORT", "URBAN", "BOUTIQUE"]))
+            (
+                f"Logicalis Hotel {city}",
+                city,
+                country,
+                random.randint(3, 5),
+                random.randint(80, 220),
+                random.choice(["RESORT", "URBAN", "BOUTIQUE"]),
+            )
         )
     await conn.executemany(
         "INSERT INTO prop (prop_name, prop_city, prop_country, prop_stars, prop_rooms, prop_type) VALUES ($1,$2,$3,$4,$5,$6)",
@@ -60,7 +66,23 @@ async def seed() -> None:
     # customers
     customers = []
     tiers = ["BRZ", "SLV", "GLD", "PLT"]
-    nationalities = ["ESP", "PRT", "GBR", "FRA", "USA", "MEX", "ARE", "DEU", "ITA", "NLD", "SWE", "NOR", "BRA", "ARG", "CHL"]
+    nationalities = [
+        "ESP",
+        "PRT",
+        "GBR",
+        "FRA",
+        "USA",
+        "MEX",
+        "ARE",
+        "DEU",
+        "ITA",
+        "NLD",
+        "SWE",
+        "NOR",
+        "BRA",
+        "ARG",
+        "CHL",
+    ]
     for _ in range(500):
         dob = fake.date_of_birth(minimum_age=18, maximum_age=80)
         customers.append(
@@ -72,7 +94,7 @@ async def seed() -> None:
                 dob,
                 random.choice(nationalities),
                 random.choice(tiers),
-                datetime.utcnow(),
+                datetime.now(),
             )
         )
     await conn.executemany(
@@ -114,7 +136,7 @@ async def seed() -> None:
                 random.choice(["VISA", "AMEX", "MC", "CASH", "BNKXFR"]),
                 status,
                 channel,
-                datetime.utcnow(),
+                datetime.now(),
             )
         )
     await conn.executemany(

@@ -1,10 +1,28 @@
 from __future__ import annotations
 
 import json
+import logging
+import re
 
 from ..llm.client import LLMClient
 from ..llm.prompts import ENRICHMENT_SYSTEM_PROMPT
 from ..models import TableContext, TableEnrichment
+
+logger = logging.getLogger(__name__)
+
+
+def _strip_markdown(text: str) -> str:
+    """Remove markdown code fences and return clean JSON string."""
+    text = text.strip()
+    # Full block with closing fence
+    match = re.search(r"```(?:json)?\s*([\s\S]+?)\s*```", text)
+    if match:
+        return match.group(1).strip()
+    # Truncated block — no closing fence, grab everything after opening fence
+    match = re.search(r"```(?:json)?\s*([\s\S]+)", text)
+    if match:
+        return match.group(1).strip()
+    return text
 
 
 def _format_context(context: TableContext) -> str:
@@ -43,10 +61,24 @@ class SemanticEnricher:
     async def enrich(self, context: TableContext) -> TableEnrichment:
         prompt = _format_context(context)
         response_text = await self.llm.complete(system=ENRICHMENT_SYSTEM_PROMPT, user=prompt)
+        clean = _strip_markdown(response_text)
         try:
-            return TableEnrichment.model_validate_json(response_text)
+            return TableEnrichment.model_validate_json(clean)
         except Exception:
-            wrapped = self._wrap_response(response_text)
+            # Try to extract table_description from truncated JSON
+            desc_match = re.search(r'"table_description"\s*:\s*"([^"]+)"', clean)
+            domain_match = re.search(r'"business_domain"\s*:\s*"([^"]+)"', clean)
+            desc = desc_match.group(1) if desc_match else clean[:200].replace("```json", "").strip()
+            logger.warning(
+                "Truncated/invalid JSON for %s — using partial description", context.name
+            )
+            wrapped = {
+                "table_description": desc,
+                "business_domain": domain_match.group(1) if domain_match else None,
+                "columns": {},
+                "suggested_tags": [],
+                "common_queries": [],
+            }
             return TableEnrichment.model_validate_json(json.dumps(wrapped))
 
     @staticmethod

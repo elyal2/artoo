@@ -1,0 +1,9 @@
+databases:
+- database_name: hotel_demo
+  sqlalchemy_uri: postgresql+psycopg2://artoo_demo:artoo_demo@postgresql:5432/hotel_demo
+  expose_in_sqllab: true
+  allow_run_async: false
+  allow_csv_upload: false
+  allow_ctas: false
+  allow_cvas: false
+  extra: "{}"

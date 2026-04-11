@@ -115,7 +115,7 @@ def create_mcp_app():
         result = await catalog.get_table(table_name)
         return result.model_dump()
 
-    return mcp.get_asgi_app()
+    return mcp.http_app()
 
 
 mcp_asgi = create_mcp_app()

@@ -1,0 +1,27 @@
+source:
+  type: postgres
+  serviceName: hotel-demo-postgres
+  serviceConnection:
+    config:
+      type: Postgres
+      username: artoo_demo
+      authType:
+        password: "${ARTOO_DB_PASSWORD}"
+      hostPort: postgresql:5432
+      database: hotel_demo
+  sourceConfig:
+    config:
+      type: DatabaseMetadata
+      markDeletedTables: true
+      includeTables: true
+      includeViews: true
+sink:
+  type: metadata-rest
+  config: {}
+workflowConfig:
+  loggerLevel: INFO
+  openMetadataServerConfig:
+    hostPort: "http://openmetadata-server:8585/api"
+    authProvider: openmetadata
+    securityConfig:
+      jwtToken: "${OPENMETADATA_INGEST_TOKEN}"

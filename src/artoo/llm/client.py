@@ -72,20 +72,17 @@ class LLMClient:
         return response.choices[0].message.content or ""
 
     async def _bedrock_complete(self, system: Optional[str], user: str) -> str:
-        body = {
+        body: dict = {
             "messages": [
-                *(
-                    [{"role": "system", "content": [{"type": "text", "text": system}]}]
-                    if system
-                    else []
-                ),
-                {"role": "user", "content": [{"type": "text", "text": user}]},
+                {"role": "user", "content": [{"text": user}]},
             ],
             "inferenceConfig": {
                 "maxTokens": self.max_tokens,
                 "temperature": self.temperature,
             },
         }
+        if system:
+            body["system"] = [{"text": system}]
 
         def _invoke() -> str:
             session_kwargs = {"profile_name": self.aws_profile} if self.aws_profile else {}
