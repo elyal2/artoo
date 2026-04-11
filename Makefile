@@ -49,7 +49,7 @@ crawl:
 	@echo "Running metadata ingestion directly via CLI (bypassing Airflow)..."
 	@TOKEN=$$(curl -sf -X POST http://localhost:8585/api/v1/users/login \
 		-H 'Content-Type: application/json' \
-		-d '{"email":"admin@open-metadata.org","password":"YWRtaW4="}' \
+		-d "{\"email\":\"admin@open-metadata.org\",\"password\":\"$$(echo -n admin | base64)\"}" \
 		| python3 -c 'import sys,json; print(json.load(sys.stdin)["accessToken"])') && \
 	docker exec \
 		-e OPENMETADATA_INGEST_TOKEN=$$TOKEN \

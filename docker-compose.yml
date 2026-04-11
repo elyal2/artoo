@@ -24,7 +24,7 @@ services:
     command: "--work_mem=10MB"
     environment:
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: password
+      POSTGRES_PASSWORD: ${POSTGRES_SUPERUSER_PASSWORD:-openmetadata_default}
       ARTOO_DB_PASSWORD: ${ARTOO_DB_PASSWORD:-artoo_demo}
     expose:
       - 5432
