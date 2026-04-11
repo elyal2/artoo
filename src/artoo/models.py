@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from typing import Any, Dict, List, Literal, Optional
+from typing import Any, Dict, List, Literal, Optional, Union
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class ColumnMeta(BaseModel):
@@ -29,7 +29,14 @@ class ColumnEnrichment(BaseModel):
     pii: bool
     pii_type: Optional[str] = None
     sensitivity: str = "internal"
-    example_values: Optional[str] = None
+    example_values: Optional[Union[str, List[Any]]] = None
+
+    @field_validator("example_values", mode="before")
+    @classmethod
+    def coerce_example_values(cls, v: Any) -> Optional[str]:
+        if isinstance(v, list):
+            return ", ".join(str(i) for i in v)
+        return v
 
 
 class TableEnrichment(BaseModel):

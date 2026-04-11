@@ -18,7 +18,25 @@ MAX_ATTEMPTS = 24
 WAIT_SECONDS = 10
 
 
+async def wait_for_om() -> None:
+    """Wait for OM to be fully ready before attempting login."""
+    async with httpx.AsyncClient(timeout=5) as client:
+        for attempt in range(60):
+            try:
+                resp = await client.get(f"{OM_URL}/api/v1/system/version")
+                if resp.status_code == 200:
+                    logger.info("OpenMetadata ready")
+                    return
+            except Exception:
+                pass
+            logger.info("Waiting for OpenMetadata... (%d/60)", attempt + 1)
+            await asyncio.sleep(5)
+    raise RuntimeError("OpenMetadata not ready after timeout")
+
+
 async def get_token() -> str:
+    """Get JWT token — only called once OM is confirmed ready."""
+    await wait_for_om()
     password = base64.b64encode(b"admin").decode()
     async with httpx.AsyncClient(timeout=10) as client:
         resp = await client.post(
@@ -26,8 +44,9 @@ async def get_token() -> str:
             headers={"Content-Type": "application/json"},
             json={"email": "admin@open-metadata.org", "password": password},
         )
-        resp.raise_for_status()
-        return str(resp.json()["accessToken"])
+        if resp.status_code == 200:
+            return str(resp.json()["accessToken"])
+        raise RuntimeError(f"Login failed: {resp.json().get('message', resp.status_code)}")
 
 
 async def main() -> None:
@@ -72,4 +91,14 @@ async def main() -> None:
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    import sys
+
+    if "--token-only" in sys.argv:
+        # Print just the token to stdout for use in shell scripts
+        async def _print_token() -> None:
+            token = await get_token()
+            print(token)
+
+        asyncio.run(_print_token())
+    else:
+        asyncio.run(main())

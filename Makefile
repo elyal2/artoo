@@ -47,10 +47,8 @@ bootstrap:
 
 crawl:
 	@echo "Running metadata ingestion directly via CLI (bypassing Airflow)..."
-	@TOKEN=$$(curl -sf -X POST http://localhost:8585/api/v1/users/login \
-		-H 'Content-Type: application/json' \
-		-d "{\"email\":\"admin@open-metadata.org\",\"password\":\"$$(echo -n admin | base64)\"}" \
-		| python3 -c 'import sys,json; print(json.load(sys.stdin)["accessToken"])') && \
+	@TOKEN=$$(uv run python openmetadata/crawl.py --token-only 2>/dev/null) && \
+	[ -n "$$TOKEN" ] || (echo "ERROR: Could not get OM token" && exit 1) && \
 	docker exec \
 		-e OPENMETADATA_INGEST_TOKEN=$$TOKEN \
 		-e ARTOO_DB_PASSWORD=$${ARTOO_DB_PASSWORD:-artoo_demo} \

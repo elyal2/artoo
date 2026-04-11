@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 import re
+from decimal import Decimal
+from datetime import date, datetime
 
 import asyncpg
 
@@ -11,6 +13,19 @@ from ..llm.client import LLMClient
 from ..llm.prompts import QUERY_SYSTEM_PROMPT
 from ..models import QueryResponse, SQLResponse, TableDetail
 from .validator import validate_sql
+
+
+def _serialize_row(row: dict) -> dict:
+    """Convert non-JSON-serializable types from asyncpg results."""
+    result = {}
+    for k, v in row.items():
+        if isinstance(v, Decimal):
+            result[k] = float(v)
+        elif isinstance(v, (datetime, date)):
+            result[k] = v.isoformat()
+        else:
+            result[k] = v
+    return result
 
 
 def _strip_markdown(text: str) -> str:
@@ -78,7 +93,7 @@ class QueryPipeline:
         timeout = settings.query_timeout_seconds
         async with pool.acquire() as conn:
             rows = await conn.fetch(sql, timeout=timeout)
-        rows_dict = [dict(r) for r in rows[: settings.max_result_rows]]
+        rows_dict = [_serialize_row(dict(r)) for r in rows[: settings.max_result_rows]]
 
         explanation = await self.llm.complete(
             system="Explain the SQL result briefly for a business audience.",

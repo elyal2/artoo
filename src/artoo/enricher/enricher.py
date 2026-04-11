@@ -42,13 +42,19 @@ def _format_context(context: TableContext) -> str:
     if context.column_stats:
         lines.append("Column statistics:")
         for col_name, stats in context.column_stats.items():
-            parts = [f"  - {col_name}: distinct={stats.get('distinct_count', '?')}"]
+            distinct = stats.get("distinct_count", "?")
+            parts = [f"  - {col_name}: distinct={distinct}"]
             if stats.get("null_pct"):
                 parts.append(f"null%={stats['null_pct']}")
             top = stats.get("top_values")
             if top:
                 vals = ", ".join(str(t.get("val", "?")) for t in top[:5])
-                parts.append(f"top=[{vals}]")
+                parts.append(f"top_values=[{vals}]")
+                # Explicitly flag low-cardinality columns for the LLM
+                if isinstance(distinct, int) and distinct <= 20:
+                    parts.append(
+                        f"<-- LOW CARDINALITY: document each value with its business meaning inferred from column name '{col_name}' and table context"
+                    )
             lines.append(" ".join(parts))
     lines.append(f"Row count: {context.row_count}")
     return "\n".join(lines)
