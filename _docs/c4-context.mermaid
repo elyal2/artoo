@@ -1,0 +1,14 @@
+flowchart TB
+  actor(User)
+  boundary(Chat)["artoo-chat (UI)"]
+  component(API)["artoo-api (FastAPI + MCP)"]
+  database(PG)["PostgreSQL hotel_demo"]
+  component(OM)["OpenMetadata"]
+  component(Enricher)["artoo-enricher (LLM)"]
+
+  User --> Chat
+  Chat --> API
+  API --> OM
+  API --> PG
+  Enricher --> OM
+  OM --> PG

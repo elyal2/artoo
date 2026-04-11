@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ARTOO Chat</title>
+  <style>
+    body { font-family: "Inter", system-ui, -apple-system, sans-serif; margin: 0; background: linear-gradient(135deg, #0f172a, #111827); color: #e5e7eb; }
+    header { padding: 16px 24px; display: flex; justify-content: space-between; align-items: center; background: rgba(255,255,255,0.04); backdrop-filter: blur(8px); position: sticky; top: 0; }
+    main { max-width: 960px; margin: 0 auto; padding: 24px; }
+    .bubble { background: #111827; border: 1px solid rgba(255,255,255,0.08); border-radius: 16px; padding: 16px; margin-bottom: 12px; box-shadow: 0 20px 60px rgba(0,0,0,0.35); }
+    .sql { font-family: "SFMono-Regular", Menlo, monospace; background: #0b1220; padding: 12px; border-radius: 12px; overflow-x: auto; color: #cbd5f5; }
+    .table { width: 100%; border-collapse: collapse; margin-top: 12px; }
+    .table th, .table td { border: 1px solid rgba(255,255,255,0.12); padding: 6px 8px; text-align: left; }
+    .chips { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+    .chip { background: rgba(255,255,255,0.08); padding: 8px 10px; border-radius: 12px; cursor: pointer; }
+    input, button { border-radius: 12px; border: 1px solid rgba(255,255,255,0.2); padding: 12px; background: rgba(255,255,255,0.08); color: #e5e7eb; }
+    button { cursor: pointer; }
+    footer { text-align: center; color: rgba(229,231,235,0.7); padding: 24px; font-size: 12px; }
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <strong>ARTOO PoC</strong><br /><small>AI-ready data intelligence demo</small>
+    </div>
+    <div style="font-size:12px; opacity:0.8;">Powered by OpenMetadata + Bedrock</div>
+  </header>
+  <main>
+    <section class="bubble">
+      <div class="chips" id="suggestions"></div>
+      <form id="query-form">
+        <input id="question" type="text" placeholder="Ask about bookings, cancellations, NPS..." style="width:75%;" />
+        <button type="submit">Ask</button>
+      </form>
+      <div id="status" style="margin-top:8px; opacity:0.8; font-size:12px;"></div>
+    </section>
+    <section id="history"></section>
+  </main>
+  <footer>Data stays on your infra. Grounded on catalog, not guesses.</footer>
+  <script>
+    const suggestions = [
+      "Which properties have the highest cancellation rate?",
+      "Show top 10 customers by total spend who haven't returned in 6 months",
+      "Average NPS by property and room category",
+      "Compare weekend vs weekday occupancy across all properties"
+    ];
+
+    const sugEl = document.getElementById('suggestions');
+    suggestions.forEach(q => {
+      const chip = document.createElement('div');
+      chip.className = 'chip'; chip.innerText = q;
+      chip.onclick = () => { document.getElementById('question').value = q; };
+      sugEl.appendChild(chip);
+    });
+
+    const form = document.getElementById('query-form');
+    const statusEl = document.getElementById('status');
+    const history = document.getElementById('history');
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const question = document.getElementById('question').value.trim();
+      if (!question) return;
+      statusEl.innerText = 'Thinking...';
+      const res = await fetch('/api/query', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ question }) });
+      if (!res.ok) { statusEl.innerText = 'Error: ' + res.statusText; return; }
+      const data = await res.json();
+      statusEl.innerText = '';
+      renderResult(question, data);
+    });
+
+    function renderResult(question, data) {
+      const card = document.createElement('div');
+      card.className = 'bubble';
+      const title = document.createElement('h3');
+      title.innerText = question;
+      card.appendChild(title);
+
+      const expl = document.createElement('p');
+      expl.innerText = data.explanation;
+      card.appendChild(expl);
+
+      const sql = document.createElement('pre');
+      sql.className = 'sql';
+      sql.innerText = data.sql;
+      card.appendChild(sql);
+
+      if (data.rows && data.rows.length) {
+        const table = document.createElement('table');
+        table.className = 'table';
+        const thead = document.createElement('thead');
+        const headerRow = document.createElement('tr');
+        Object.keys(data.rows[0]).forEach(key => {
+          const th = document.createElement('th'); th.innerText = key; headerRow.appendChild(th);
+        });
+        thead.appendChild(headerRow); table.appendChild(thead);
+        const tbody = document.createElement('tbody');
+        data.rows.slice(0, 20).forEach(row => {
+          const tr = document.createElement('tr');
+          Object.values(row).forEach(val => { const td = document.createElement('td'); td.innerText = val; tr.appendChild(td); });
+          tbody.appendChild(tr);
+        });
+        table.appendChild(tbody);
+        card.appendChild(table);
+      }
+      history.prepend(card);
+    }
+  </script>
+</body>
+</html>
