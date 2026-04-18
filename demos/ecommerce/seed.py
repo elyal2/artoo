@@ -19,7 +19,7 @@ def _dsn() -> str:
 
 async def seed() -> None:
     conn = await asyncpg.connect(_dsn())
-    tables = ["daily_sales", "reviews", "order_items", "orders", "products", "customers"]
+    tables = ["reviews", "order_items", "orders", "products", "customers"]
     for tbl in tables:
         await conn.execute(f"TRUNCATE TABLE {tbl} RESTART IDENTITY CASCADE;")
 

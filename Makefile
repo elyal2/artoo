@@ -2,6 +2,10 @@
 
 COMPOSE_FILES=-f docker-compose.yml
 
+# Load demo profile from .env.local if present (command-line overrides)
+-include .env.local
+export DEMO_PROFILE
+
 # Demo profile: selects which demo data to load (demos/<profile>/)
 DEMO_PROFILE ?= hotel
 

@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 set -euo pipefail
 
 # ARTOO_DB_PASSWORD viene del entorno del contenedor (docker-compose.yml)

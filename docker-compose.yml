@@ -36,7 +36,7 @@ services:
     networks:
       - app_net
     healthcheck:
-      test: psql -U postgres -tAc 'select 1' -d openmetadata_db
+      test: psql -U postgres -tAc 'select 1' -d postgres
       interval: 15s
       timeout: 10s
       retries: 10
