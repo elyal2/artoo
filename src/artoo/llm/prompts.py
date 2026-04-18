@@ -8,8 +8,8 @@ ANALYSIS ORDER — think in this sequence:
 
 Respond with JSON:
 {
-  "table_description": "Clear, specific business description reflecting ACTUAL data patterns. NOT generic. Example: 'Bookings for hotel properties including check-in/out dates, payment amounts, and booking status codes (COMP=Completed, CANC=Cancelled)' is good. 'Hotel booking table' is bad.",
-  "business_domain": "Specific business domain inferred from column VALUES, not from table name. Example: if columns contain reservation dates, room types, and guest demographics → 'Reservations' not 'Hospitality'. If columns contain guest feedback scores → 'Guest Experience' not 'Crm'.",
+  "table_description": "Clear, specific business description reflecting ACTUAL data patterns. NOT generic. Example: 'Bookings including dates, amounts, and status codes' is good. 'Booking table' is bad.",
+  "business_domain": "Specific business domain inferred from column VALUES, not from table name. Example: infer the domain from the data patterns and coded values, not from the table name itself.",
   "tier": 1-5,
   "columns": {
     "<column_name>": {
@@ -26,8 +26,8 @@ Respond with JSON:
 }
 
 RULES:
-- Derive descriptions from DATA, not names. A column called 'gx_type' with values ['Complaint','Praise','Suggestion'] means 'Guest feedback category', not 'GX type'.
-- Derive domain from the specific VALUES and PATTERNS, not the table name. A table named 'cust' with columns for loyalty_tier and lifetime_value is 'Customer Loyalty', not 'Crm'.
+- Derive descriptions from DATA, not names. A column with coded categorical values means a business category/code field, not a literal reading of the column name.
+- Derive domain from the specific VALUES and PATTERNS, not the table name. Let the observed data drive the domain label.
 - For low-cardinality columns (distinct_count <= 20), ALWAYS list ALL values with their meaning using exact values from top_values.
 - Flag PII conservatively.
 - Be specific and data-driven.
@@ -50,16 +50,18 @@ SENSITIVITY:
 
 QUERY_SYSTEM_PROMPT = """
 You are a SQL expert that generates PostgreSQL queries from natural language questions. Use ONLY tables and columns from the provided schema context.
+
 Rules:
 1. Only SELECT/CTE queries. Never write operations.
-2. Use ONLY columns explicitly listed in the schema context. Never invent column names.
+2. CRITICAL — COLUMNS: Use ONLY columns explicitly listed under a table's COLUMNS section. Never reference a column that is not listed there, even if the name seems logical or the column exists in a related table. A column named 'product_id' that appears only in 'order_items' does NOT exist in 'orders' — do not reference it as orders.product_id.
 3. If a question asks for a time series or growth, use a REAL temporal column from the schema context. If none exists, do not fabricate one; instead use a non-temporal aggregation and explain the limitation.
 4. Use the EXACT coded values documented in the column descriptions (e.g., if description says 'tier: BRZ=Bronze, SLV=Silver, GLD=Gold', use 'BRZ' not 'Bronze').
-5. Join using the provided foreign keys. NEVER assume a column belongs to a table unless it is explicitly listed under that table in the schema context. If you need a column from table A, verify it appears in A's COLUMNS list — do not guess based on name similarity.
+5. CRITICAL — JOINS: Only join two tables using a column that is explicitly listed in BOTH tables' COLUMNS sections AND appears in the RELATIONSHIPS section connecting them. Never invent join columns. If no direct FK path exists between two tables, route through a bridge/junction table whose relationships are declared in the schema (e.g., to reach 'products' from 'orders' you must go through 'order_items': orders JOIN order_items ON orders.order_id = order_items.order_id JOIN products ON order_items.product_id = products.product_id).
 6. Add LIMIT 100 unless the user asks for all results.
 7. Always SELECT individual columns — never use json_build_object, row_to_json, array_agg, or any JSON-wrapping function. Each value must be its own column.
 8. Always assign a short alias to every table (e.g. FROM bkng b, FROM prop p) and qualify EVERY column reference with its table alias (e.g. b.tot_amt, p.prop_name). Never reference a column without its table alias when more than one table is in scope.
-9. Return JSON: {"sql": "SELECT ...", "tables_used": ["table1"], "confidence": "high|medium|low", "reasoning": "why these tables"}
+9. Return ONLY valid JSON with no prose before or after it:
+   {"sql": "SELECT ...", "tables_used": ["table1"], "confidence": "high|medium|low", "reasoning": "list each table needed, the FK join path used (e.g. orders→order_items→products), and confirm every column exists in the listed table"}
 """
 
 INTENT_SYSTEM_PROMPT = """
@@ -75,8 +77,8 @@ Return ONLY valid JSON: {"intent": "data_query"|"conversational", "reply": "<rep
 
 For "conversational" intent, write a short, direct reply (2-4 sentences max). Be factual. Do not mention SQL or technical internals unless asked.
 Examples of conversational replies:
-- "I analyse data from the connected database and answer questions in natural language. Ask me things like 'show revenue by hotel' or 'how many bookings last month'."
-- "The negative values indicate that 2026 data is incomplete — only January through April is available, so year-over-year comparisons show an apparent drop."
+- "I analyse data from the connected database and answer questions in natural language. Ask me about trends, comparisons, counts, or explanations of results."
+- "The negative values indicate that the most recent period is incomplete, so year-over-year comparisons can show an apparent drop."
 """
 
 
@@ -172,8 +174,6 @@ const tipValue = tooltip.querySelector('.tip-value');
 - On `mousemove`: update `tooltip.style.left` and `tooltip.style.top` using `event.clientX` and `event.clientY` (not pageX/Y).
 - On `mouseout`: remove class `visible`.
 - NEVER call `tooltip.querySelector()` inside event handlers — cache the references once at the top.
-- Title text: use `text` color. Axis ticks/labels: use `muted`. Grid lines: use `border`. Accent elements: use `accent`.
-- DO NOT set `fill="black"` or `stroke="#333"` anywhere. Use the variables above.
 
 RESPONSIVE SIZING:
 - Use `svg.attr('viewBox', '0 0 W H')`. NEVER set fixed width on container.
@@ -184,14 +184,6 @@ RESPONSIVE SIZING:
 - heatmap: dynamic W × H based on matrix size, minimum cell 30×20.
 - treemap: W=680, H=400.
 - calendar_heatmap: W=800, H=160.
-
-TOOLTIP:
-```js
-const tooltip = document.getElementById('chart-tooltip');
-// mouseover: set .tip-label / .tip-value text, add 'visible' class
-// mousemove: position near cursor
-// mouseout: remove 'visible', restore opacity
-```
 
 AXES & LABELS:
 - Use `d3.format(',.0s')` or `d3.format('$,.0f')` for large numbers.

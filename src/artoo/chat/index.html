@@ -114,10 +114,11 @@
       padding: 6px 16px;
       font-size: 12px;
       color: var(--text);
-      cursor: default;
-      transition: background 0.1s;
+      cursor: pointer;
+      transition: background 0.1s, border-color 0.1s;
     }
     .table-item:hover { background: rgba(255,255,255,0.03); }
+    .table-item.selected { background: rgba(91,141,238,0.12); border-left: 2px solid var(--accent); padding-left: 14px; }
     .table-tech {
       font-family: var(--font-mono);
       font-size: 12px;
@@ -945,6 +946,11 @@
       scrollBottom();
     }
 
+    function buildSelectAllQuestion(tableName, displayName) {
+      const shortName = tableName.split('.').pop();
+      return `Show all data from ${displayName || shortName}.`; 
+    }
+
     // ── chart logic ──────────────────────────────────────────
     const CHART_COLORS = [
       '#5b8dee', '#3ecf8e', '#e09060', '#b8a0e0', '#e07070',
@@ -1044,9 +1050,24 @@
         details.forEach(t => {
           const item = document.createElement('div');
           item.className = 'table-item';
+          item.tabIndex = 0;
+          item.setAttribute('role', 'button');
           const tech = t.name.split('.').pop();
           const displayName = t.display_name || t.business_domain || tech;
           item.innerHTML = `<div class="table-tech" title="${escHtml(t.description || '')}">${escHtml(displayName)}</div><div class="table-domain">${escHtml(tech)}</div>`;
+          item.addEventListener('click', () => {
+            const q = buildSelectAllQuestion(t.name, displayName);
+            setInput(q);
+            textarea.focus();
+            document.querySelectorAll('.table-item.selected').forEach(el => el.classList.remove('selected'));
+            item.classList.add('selected');
+          });
+          item.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              item.click();
+            }
+          });
           listEl.appendChild(item);
         });
       } catch {}

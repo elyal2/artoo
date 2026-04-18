@@ -50,6 +50,30 @@ def _strip_markdown(text: str) -> str:
     return text
 
 
+def _extract_sql_response(raw: str) -> SQLResponse:
+    """Parse LLM output into SQLResponse with fallbacks for malformed responses."""
+    clean = _strip_markdown(raw)
+    # Happy path: well-formed JSON object
+    try:
+        return SQLResponse.model_validate_json(clean)
+    except Exception:
+        pass
+    # The LLM may output prose + JSON; find the last {...} block
+    brace_match = re.search(r"\{[\s\S]*\}", clean)
+    if brace_match:
+        try:
+            return SQLResponse.model_validate_json(brace_match.group(0))
+        except Exception:
+            pass
+    # Last resort: treat the whole response as raw SQL if it looks like one
+    sql_match = re.search(r"((?:WITH|SELECT)\s[\s\S]+)", clean, re.IGNORECASE)
+    if sql_match:
+        sql_text = sql_match.group(1).strip().rstrip(";") + ";"
+        logger.warning("LLM returned raw SQL instead of JSON — wrapping with low confidence")
+        return SQLResponse(sql=sql_text, tables_used=[], confidence="low")
+    raise ValueError(f"Cannot parse LLM SQL response: {clean[:200]}")
+
+
 class QueryPipeline:
     def __init__(self, catalog: OpenMetadataClient, llm: LLMClient | None = None) -> None:
         self.catalog = catalog
@@ -227,6 +251,54 @@ class QueryPipeline:
                         f"Available: {', '.join(sorted(allowed_cols))}"
                     )
 
+    async def _generate_sql_with_retry(
+        self, base_user_msg: str, tables: list[TableDetail], max_retries: int = 1
+    ) -> tuple[SQLResponse, str]:
+        """Generate SQL, validate it, and retry once with the error as feedback."""
+        user_msg = base_user_msg
+        last_error: str | None = None
+
+        for attempt in range(max_retries + 1):
+            if attempt > 0 and last_error:
+                user_msg = (
+                    f"{base_user_msg}\n\n"
+                    f"Your previous attempt produced invalid SQL. Error: {last_error}\n"
+                    f"Fix the SQL addressing the error above. Check the schema carefully: "
+                    f"every column and every join path must exist in the COLUMNS and RELATIONSHIPS sections."
+                )
+                logger.info("Retrying SQL generation after error (attempt %d): %s", attempt + 1, last_error)
+
+            raw = await self.llm.complete(system=QUERY_SYSTEM_PROMPT, user=user_msg)
+            parsed = _extract_sql_response(raw)
+            sql = validate_sql(parsed.sql)
+            logger.info(
+                "Generated SQL (attempt %d)",
+                attempt + 1,
+                extra={"sql": sql, "tables": parsed.tables_used, "confidence": parsed.confidence},
+            )
+
+            # Pre-execution column validation
+            try:
+                self._validate_sql_columns(sql, tables)
+            except ValueError as col_err:
+                last_error = str(col_err)
+                continue
+
+            # EXPLAIN dry-run — catches type mismatches, missing refs, bad aliases
+            pool = await self._ensure_pool()
+            async with pool.acquire() as conn:
+                try:
+                    await conn.execute(f"EXPLAIN {sql}", timeout=10)
+                    return parsed, sql
+                except Exception as exc:
+                    pg_msg = str(exc).split("\n")[0]
+                    hint_match = re.search(r"HINT:\s*(.+)", str(exc))
+                    if hint_match:
+                        pg_msg = f"{pg_msg} — {hint_match.group(1)}"
+                    last_error = pg_msg
+
+        raise ValueError(last_error or "SQL generation failed")
+
     async def query(
         self, question: str, history: list[ConversationMessage] | None = None
     ) -> QueryResponse:
@@ -268,29 +340,12 @@ class QueryPipeline:
                     sql_context += f"Previous SQL: {msg.content}\n"
             sql_context += "\n"
 
-        sql_candidate = await self.llm.complete(
-            system=QUERY_SYSTEM_PROMPT,
-            user=f"Conversation history:\n{sql_context}New question: {question}\nSchema:\n{context}",
-        )
-        parsed = SQLResponse.model_validate_json(_strip_markdown(sql_candidate))
-        sql = validate_sql(parsed.sql)
-        logger.info("Generated SQL", extra={"sql": sql, "tables": parsed.tables_used, "confidence": parsed.confidence})
-        self._validate_sql_columns(sql, tables)
+        base_user_msg = f"Conversation history:\n{sql_context}New question: {question}\nSchema:\n{context}"
+        parsed, sql = await self._generate_sql_with_retry(base_user_msg, tables)
 
         pool = await self._ensure_pool()
         timeout = settings.query_timeout_seconds
         async with pool.acquire() as conn:
-            # Dry-run with EXPLAIN to catch SQL errors (missing FROM, bad columns,
-            # type mismatches) before executing the real query.
-            try:
-                await conn.execute(f"EXPLAIN {sql}", timeout=10)
-            except Exception as exc:
-                # Extract the first line of the Postgres error (message + hint)
-                msg = str(exc).split("\n")[0]
-                hint_match = re.search(r"HINT:\s*(.+)", str(exc))
-                if hint_match:
-                    msg = f"{msg} — {hint_match.group(1)}"
-                raise ValueError(msg) from exc
             rows = await conn.fetch(sql, timeout=timeout)
         rows_dict = [_serialize_row(dict(r)) for r in rows[: settings.max_result_rows]]
 

@@ -38,6 +38,7 @@
 - Default Postgres DSN uses the Compose service name `postgresql` (not `localhost`).
 - `OPENMETADATA_DB_FILTER` — optional FQN prefix (e.g. `my-service.my_db`) that scopes `list_tables` and `get_table_id` to a specific database. Unset means all tables.
 - Chat requests now route by intent: conversational questions get a direct reply, while data queries go through schema context → SQL generation → EXPLAIN dry-run → execution.
+- Keep prompts and docs generic. Do not bake domain-specific relationship rules into the SQL prompt; rely on the schema context, foreign keys, and table descriptions instead.
 
 ## Enricher — Phase II Governance
 The enricher now runs a two-step flow:
