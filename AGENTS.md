@@ -16,6 +16,7 @@
 - `make down` — tears down containers + volumes; may need `sudo rm -rf docker-volume/db-data-postgres` on permission failure.
 - `make demo` — full local stack: `up` → `seed` → `bootstrap` → `crawl` → `api`.
 - `make demo-full` — same as `demo` but adds `enrich` before `api`.
+- `make seed DEMO_PROFILE=ecommerce` — loads the ecommerce demo from `demos/ecommerce/`; `DEMO_PROFILE` is read from `.env.local` if present.
 
 ## Testing — Important Gotcha
 - **`make test` currently selects zero tests** because it filters with `-m unit` but no test file applies `@pytest.mark.unit`. To actually run the suite: `uv run python -m pytest` (or `uv run python -m pytest --cov=src/artoo`).
@@ -36,6 +37,7 @@
 - Docker containers need explicit `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY`; SSO profiles don't work inside containers — keep `LLM_AWS_PROFILE` empty.
 - Default Postgres DSN uses the Compose service name `postgresql` (not `localhost`).
 - `OPENMETADATA_DB_FILTER` — optional FQN prefix (e.g. `my-service.my_db`) that scopes `list_tables` and `get_table_id` to a specific database. Unset means all tables.
+- Chat requests now route by intent: conversational questions get a direct reply, while data queries go through schema context → SQL generation → EXPLAIN dry-run → execution.
 
 ## Enricher — Phase II Governance
 The enricher now runs a two-step flow:
@@ -61,6 +63,8 @@ The enricher now runs a two-step flow:
 - `docker-compose.yml` and the Makefile are the source of truth for local orchestration; prefer them over ad-hoc `docker run`.
 - `make crawl` bypasses Airflow intentionally (incompatible plugin); it execs `metadata ingest` directly in the `openmetadata_ingestion` container.
 - OpenMetadata is slow on first boot (3–5 min); `make bootstrap` polls up to 30 attempts.
+- The demo Postgres image already ships a base init script that creates the OpenMetadata database/user; demo profile init scripts should only create the app demo roles/tables.
+- `demos/ecommerce/seed.py` must stay aligned with the ecommerce schema in `demos/ecommerce/init.sh`.
 
 ## API Endpoints
 `POST /api/query` · `GET /api/tables` · `GET /api/table/{fqn}` · `GET /health` · `/mcp`

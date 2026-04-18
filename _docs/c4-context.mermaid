@@ -2,13 +2,20 @@ flowchart TB
   actor(User)
   boundary(Chat)["artoo-chat (UI)"]
   component(API)["artoo-api (FastAPI + MCP)"]
+  component(Intent)["Intent routing"]
+  component(Query)["SQL generation + validation"]
+  component(Chart)["Chart recommendation + D3 render"]
   database(PG)["PostgreSQL (demo data)"]
   component(OM)["OpenMetadata"]
   component(Enricher)["artoo-enricher (LLM)"]
 
   User --> Chat
   Chat --> API
-  API --> OM
-  API --> PG
+  API --> Intent
+  Intent -->|conversational| Chat
+  Intent -->|data_query| Query
+  Query --> OM
+  Query --> PG
+  Query --> Chart
   Enricher --> OM
   OM --> PG
