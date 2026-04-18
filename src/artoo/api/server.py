@@ -11,7 +11,7 @@ from pydantic import BaseModel
 
 from ..catalog.openmetadata import OpenMetadataClient, get_default_client
 from ..logging import configure_logging
-from ..models import QueryResponse, TableDetail, TableSummary
+from ..models import ConversationMessage, QueryResponse, TableDetail, TableSummary
 from .pipeline import QueryPipeline
 
 logger = logging.getLogger(__name__)
@@ -19,6 +19,7 @@ logger = logging.getLogger(__name__)
 
 class QueryRequest(BaseModel):
     question: str
+    history: list[ConversationMessage] = []
 
 
 @asynccontextmanager
@@ -58,7 +59,7 @@ async def api_query(
     req: QueryRequest, pipeline: QueryPipeline = Depends(get_pipeline)
 ) -> QueryResponse:
     try:
-        return await pipeline.query(req.question)
+        return await pipeline.query(req.question, req.history)
     except Exception as exc:
         logger.exception("Query failed")
         raise HTTPException(status_code=500, detail=str(exc))

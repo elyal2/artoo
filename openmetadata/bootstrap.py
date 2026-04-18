@@ -53,15 +53,19 @@ def _auth_headers(token: str) -> dict[str, str]:
 
 
 async def ensure_postgres_service(client: httpx.AsyncClient, om_url: str, token: str) -> str:
+    from artoo.config import _extract_db_name
+
     pg_password = os.environ.get("ARTOO_DB_PASSWORD", "artoo_demo")
+    service_name = settings.openmetadata_service_name
+    database_name = _extract_db_name(settings.postgres_dsn)
     payload = {
-        "name": "hotel-demo-postgres",
+        "name": service_name,
         "serviceType": "Postgres",
         "connection": {
             "config": {
                 "type": "Postgres",
                 "hostPort": "postgresql:5432",
-                "database": "hotel_demo",
+                "database": database_name,
                 "username": "artoo_demo",
                 "authType": {"password": pg_password},
             }
@@ -78,7 +82,7 @@ async def ensure_postgres_service(client: httpx.AsyncClient, om_url: str, token:
     service_id = data.get("id")
     if not service_id:
         existing = await client.get(
-            f"{om_url}/api/v1/services/databaseServices/name/hotel-demo-postgres",
+            f"{om_url}/api/v1/services/databaseServices/name/{service_name}",
             headers=_auth_headers(token),
         )
         existing.raise_for_status()
@@ -89,8 +93,10 @@ async def ensure_postgres_service(client: httpx.AsyncClient, om_url: str, token:
 async def trigger_ingestion(
     client: httpx.AsyncClient, om_url: str, token: str, service_id: str
 ) -> None:
+
+    service_name = settings.openmetadata_service_name
     payload = {
-        "name": "hotel-demo-metadata-ingestion",
+        "name": f"{service_name}-metadata-ingestion",
         "pipelineType": "metadata",
         "service": {"id": service_id, "type": "databaseService"},
         "airflowConfig": {
@@ -148,10 +154,6 @@ async def main() -> None:
         service_id = await ensure_postgres_service(client, om_url, token)
         await trigger_ingestion(client, om_url, token, service_id)
     logger.info("OpenMetadata bootstrap complete")
-
-
-if __name__ == "__main__":
-    asyncio.run(main())
 
 
 if __name__ == "__main__":

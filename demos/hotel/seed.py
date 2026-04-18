@@ -9,7 +9,6 @@ from faker import Faker
 
 from artoo.config import settings
 
-
 fake = Faker()
 
 
@@ -175,7 +174,7 @@ async def seed() -> None:
     # revenue daily
     rev_rows = []
     for prop_id in prop_ids:
-        for day_offset in range(180):
+        for day_offset in range(365):
             rev_date = base_date + timedelta(days=day_offset)
             occ = round(random.uniform(0.45, 0.92), 2) * 100
             adr = round(random.uniform(80, 320), 2)

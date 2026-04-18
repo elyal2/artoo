@@ -11,6 +11,6 @@ superset fab create-admin \
 
 superset init
 
-# Pre-register hotel_demo database connection
-superset import-datasources -p /app/superset/imports/hotel_demo.yaml || \
-    echo "WARNING: Could not pre-register hotel_demo (manual setup needed)"
+# Pre-register demo database connection
+superset import-datasources -p /app/superset/imports/demo.yaml || \
+    echo "WARNING: Could not pre-register demo database (manual setup needed)"

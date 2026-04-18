@@ -21,14 +21,14 @@ def test_fk_name_detects_foreign_key():
         "name": "cust_id",
         "dataType": "INT",
         "constraint": "ForeignKey",
-        "foreignKeys": [{"table": "hotel_demo.public.cust", "column": "cust_id"}],
+        "foreignKeys": [{"table": "mydb.public.customers", "column": "customer_id"}],
     }
     result = OpenMetadataClient._fk_name(col)
-    assert result == "hotel_demo.public.cust.cust_id"
+    assert result == "mydb.public.customers.customer_id"
 
 
 def test_fk_name_returns_none_for_regular_column():
-    col = {"name": "bk_status", "dataType": "VARCHAR", "description": "Status"}
+    col = {"name": "status", "dataType": "VARCHAR", "description": "Status"}
     assert OpenMetadataClient._fk_name(col) is None
 
 
@@ -47,42 +47,47 @@ def test_fk_name_returns_none_for_empty_fk():
     assert OpenMetadataClient._fk_name(col) is None
 
 
-def test_parse_table_summary_with_tag():
-    item = {
-        "fullyQualifiedName": "hotel_demo.public.cust",
-        "name": "cust",
-        "description": "Customers",
-        "tags": [{"tagFQN": "Business.customer"}],
-    }
-    tags = item.get("tags") or [{}]
+# --- _domain_name helper ---
+
+
+def test_domain_name_from_dict_name_key():
+    assert OpenMetadataClient._domain_name({"name": "Customer", "id": "abc"}) == "Customer"
+
+
+def test_domain_name_from_dict_fqn_fallback():
+    assert OpenMetadataClient._domain_name({"fullyQualifiedName": "Revenue"}) == "Revenue"
+
+
+def test_domain_name_from_string():
+    assert OpenMetadataClient._domain_name("Sales") == "Sales"
+
+
+def test_domain_name_none_input():
+    assert OpenMetadataClient._domain_name(None) is None
+
+
+def test_domain_name_empty_dict():
+    assert OpenMetadataClient._domain_name({}) is None
+
+
+# --- TableSummary with domain field (new OM response shape) ---
+
+
+def test_parse_table_summary_with_domain_object():
+    """list_tables now reads business_domain from the 'domain' field, not tags."""
+    domain_field = {"name": "Customer", "id": "uuid-1", "type": "domain"}
     summary = TableSummary(
-        name=item.get("fullyQualifiedName", item.get("name")),
-        description=item.get("description"),
-        business_domain=tags[0].get("tagFQN") if tags and tags[0] else None,
+        name="mydb.public.cust",
+        description="Customers",
+        business_domain=OpenMetadataClient._domain_name(domain_field),
     )
-    assert summary.name == "hotel_demo.public.cust"
-    assert summary.description == "Customers"
-    assert summary.business_domain == "Business.customer"
+    assert summary.business_domain == "Customer"
 
 
-def test_parse_table_summary_without_tags():
-    item = {
-        "fullyQualifiedName": "hotel_demo.public.bkng",
-        "name": "bkng",
-        "description": "Bookings",
-        "tags": None,
-    }
-    tags = item.get("tags") or [{}]
+def test_parse_table_summary_without_domain():
     summary = TableSummary(
-        name=item.get("fullyQualifiedName", item.get("name")),
-        description=item.get("description"),
-        business_domain=tags[0].get("tagFQN") if tags and tags[0] else None,
+        name="mydb.public.orders",
+        description="Orders",
+        business_domain=OpenMetadataClient._domain_name(None),
     )
     assert summary.business_domain is None
-
-
-def test_list_tables_url_encoding_params():
-    client = OpenMetadataClient(base_url="http://om:8585", api_token=None)
-    base = f"{client.base_url}/api/v1/tables?fields=description,usageSummary&limit=100"
-    assert "om:8585" in base
-    assert "limit=100" in base

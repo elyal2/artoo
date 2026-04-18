@@ -1,6 +1,6 @@
 source:
   type: postgres
-  serviceName: hotel-demo-postgres
+  serviceName: ${OM_SERVICE_NAME}
   serviceConnection:
     config:
       type: Postgres
@@ -8,7 +8,7 @@ source:
       authType:
         password: "${ARTOO_DB_PASSWORD}"
       hostPort: postgresql:5432
-      database: hotel_demo
+      database: ${OM_DATABASE}
   sourceConfig:
     config:
       type: DatabaseMetadata

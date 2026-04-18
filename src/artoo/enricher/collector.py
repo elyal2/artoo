@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List
 
-import asyncpg
+import asyncpg  # type: ignore[import-untyped]
 
 from ..catalog.openmetadata import OpenMetadataClient
 from ..config import settings

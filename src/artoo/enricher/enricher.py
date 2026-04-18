@@ -27,20 +27,22 @@ def _strip_markdown(text: str) -> str:
 
 def _format_context(context: TableContext) -> str:
     lines: list[str] = [f"Table: {context.name}"]
+    if context.row_count:
+        lines.append(f"Row count: {context.row_count}")
+    lines.append("")
+    lines.append("Column analysis (analyze these FIRST to understand the data):")
     lines.append("Columns:")
     for col in context.columns:
-        fk = f" FK {col.foreign_key}" if col.foreign_key else ""
-        lines.append(f"  - {col.name} ({col.data_type}){fk}")
-    if context.foreign_keys:
-        lines.append("Foreign keys:")
-        for fk in context.foreign_keys:
-            lines.append(f"  - {fk}")
-    if context.sample_rows:
-        lines.append("Sample rows:")
-        for row in context.sample_rows:
-            lines.append(f"  - {row}")
+        fk = f" FK → {col.foreign_key}" if col.foreign_key else ""
+        col_line = f"  - {col.name} ({col.data_type}){fk}"
+        if col.description:
+            col_line += f" — {col.description}"
+        if col.business_name:
+            col_line += f" [business_name: {col.business_name}]"
+        lines.append(col_line)
     if context.column_stats:
-        lines.append("Column statistics:")
+        lines.append("")
+        lines.append("Column statistics (use these values to infer business meaning):")
         for col_name, stats in context.column_stats.items():
             distinct = stats.get("distinct_count", "?")
             parts = [f"  - {col_name}: distinct={distinct}"]
@@ -50,13 +52,21 @@ def _format_context(context: TableContext) -> str:
             if top:
                 vals = ", ".join(str(t.get("val", "?")) for t in top[:5])
                 parts.append(f"top_values=[{vals}]")
-                # Explicitly flag low-cardinality columns for the LLM
                 if isinstance(distinct, int) and distinct <= 20:
                     parts.append(
-                        f"<-- LOW CARDINALITY: document each value with its business meaning inferred from column name '{col_name}' and table context"
+                        "<-- LOW CARDINALITY: document each value with its business meaning"
                     )
             lines.append(" ".join(parts))
-    lines.append(f"Row count: {context.row_count}")
+    if context.foreign_keys:
+        lines.append("")
+        lines.append("Foreign keys:")
+        for fk in context.foreign_keys:
+            lines.append(f"  - {fk}")
+    if context.sample_rows:
+        lines.append("")
+        lines.append("Sample rows (illustrate actual data patterns):")
+        for row in context.sample_rows:
+            lines.append(f"  - {row}")
     return "\n".join(lines)
 
 
@@ -78,7 +88,7 @@ class SemanticEnricher:
             logger.warning(
                 "Truncated/invalid JSON for %s — using partial description", context.name
             )
-            wrapped = {
+            wrapped: dict[str, object] = {
                 "table_description": desc,
                 "business_domain": domain_match.group(1) if domain_match else None,
                 "columns": {},

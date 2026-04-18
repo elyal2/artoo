@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 from dataclasses import dataclass
 from typing import Optional
 
@@ -10,6 +11,8 @@ from anthropic import AsyncAnthropic
 from openai import AsyncOpenAI
 
 from ..config import LLMProvider, settings
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(slots=True)
@@ -34,35 +37,54 @@ class LLMClient:
             aws_region=settings.llm_aws_region,
         )
 
-    async def complete(self, *, system: Optional[str], user: str) -> str:
+    async def complete(
+        self,
+        *,
+        system: Optional[str],
+        user: str,
+        model: Optional[str] = None,
+        max_tokens: Optional[int] = None,
+    ) -> str:
+        effective_model = model or self.model
+        effective_tokens = max_tokens or self.max_tokens
+        logger.debug(
+            "LLM call: provider=%s model=%s max_tokens=%d",
+            self.provider.value,
+            effective_model,
+            effective_tokens,
+        )
         if self.provider == LLMProvider.ANTHROPIC:
-            return await self._anthropic_complete(system, user)
+            return await self._anthropic_complete(system, user, effective_model, effective_tokens)
         if self.provider == LLMProvider.OPENAI:
-            return await self._openai_complete(system, user)
+            return await self._openai_complete(system, user, effective_model, effective_tokens)
         if self.provider == LLMProvider.BEDROCK:
-            return await self._bedrock_complete(system, user)
+            return await self._bedrock_complete(system, user, effective_model, effective_tokens)
         raise ValueError(f"Unsupported provider {self.provider}")
 
-    async def _anthropic_complete(self, system: Optional[str], user: str) -> str:
+    async def _anthropic_complete(
+        self, system: Optional[str], user: str, model: str, max_tokens: int
+    ) -> str:
         if not self.api_key:
             raise RuntimeError("ANTHROPIC api key missing")
         client = AsyncAnthropic(api_key=self.api_key)
         response = await client.messages.create(
-            model=self.model,
+            model=model,
             system=system or "",
-            max_tokens=self.max_tokens,
+            max_tokens=max_tokens,
             temperature=self.temperature,
             messages=[{"role": "user", "content": user}],
         )
         return response.content[0].text  # type: ignore[index]
 
-    async def _openai_complete(self, system: Optional[str], user: str) -> str:
+    async def _openai_complete(
+        self, system: Optional[str], user: str, model: str, max_tokens: int
+    ) -> str:
         if not self.api_key:
             raise RuntimeError("OPENAI api key missing")
         client = AsyncOpenAI(api_key=self.api_key)
         response = await client.chat.completions.create(
-            model=self.model,
-            max_tokens=self.max_tokens,
+            model=model,
+            max_tokens=max_tokens,
             temperature=self.temperature,
             messages=[
                 {"role": "system", "content": system or ""},
@@ -71,36 +93,61 @@ class LLMClient:
         )
         return response.choices[0].message.content or ""
 
-    async def _bedrock_complete(self, system: Optional[str], user: str) -> str:
-        body: dict = {
-            "messages": [
-                {"role": "user", "content": [{"text": user}]},
-            ],
-            "inferenceConfig": {
-                "maxTokens": self.max_tokens,
-                "temperature": self.temperature,
-            },
-        }
-        if system:
-            body["system"] = [{"text": system}]
+    def _is_anthropic_model(self, model: str) -> bool:
+        return "anthropic" in model or "claude" in model
+
+    async def _bedrock_complete(
+        self, system: Optional[str], user: str, model: str, max_tokens: int
+    ) -> str:
+        if self._is_anthropic_model(model):
+            body = self._bedrock_anthropic_body(system, user, max_tokens)
+        else:
+            body = self._bedrock_nova_body(system, user, max_tokens)
 
         def _invoke() -> str:
             session_kwargs = {"profile_name": self.aws_profile} if self.aws_profile else {}
             session = boto3.Session(**session_kwargs)
             client = session.client("bedrock-runtime", region_name=self.aws_region)
             response = client.invoke_model(
-                modelId=self.model,
+                modelId=model,
                 contentType="application/json",
                 accept="application/json",
                 body=json.dumps(body),
             )
             payload = json.loads(response["body"].read())
-            # Bedrock response format: {"output": {"message": {"content": [{"text": "..."}]}}}
+            if self._is_anthropic_model(model):
+                return payload.get("content", [{}])[0].get("text", "")
             return (
                 payload.get("output", {}).get("message", {}).get("content", [{}])[0].get("text", "")
             )
 
         return await asyncio.to_thread(_invoke)
+
+    def _bedrock_anthropic_body(self, system: Optional[str], user: str, max_tokens: int) -> dict:
+        messages = [{"role": "user", "content": user}]
+        body: dict = {
+            "anthropic_version": "bedrock-2023-05-31",
+            "max_tokens": max_tokens,
+            "temperature": self.temperature,
+            "messages": messages,
+        }
+        if system:
+            body["system"] = system
+        return body
+
+    def _bedrock_nova_body(self, system: Optional[str], user: str, max_tokens: int) -> dict:
+        body: dict = {
+            "messages": [
+                {"role": "user", "content": [{"text": user}]},
+            ],
+            "inferenceConfig": {
+                "maxTokens": max_tokens,
+                "temperature": self.temperature,
+            },
+        }
+        if system:
+            body["system"] = [{"text": system}]
+        return body
 
 
 __all__ = ["LLMClient"]

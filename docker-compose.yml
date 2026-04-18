@@ -9,7 +9,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-#  ARTOO PoC: OpenMetadata (Postgres + ES) + hotel_demo init + Superset + artoo-api / artoo-enricher.
+#  ARTOO PoC: OpenMetadata (Postgres + ES) + demo data init + Superset + artoo-api / artoo-enricher.
 
 volumes:
   ingestion-volume-dag-airflow:
@@ -32,7 +32,7 @@ services:
       - "5432:5432"
     volumes:
       - ./docker-volume/db-data-postgres:/var/lib/postgresql/data
-      - ./postgres/init.sh:/docker-entrypoint-initdb.d/02-hotel.sh
+      - ./demos/${DEMO_PROFILE:-hotel}/init.sh:/docker-entrypoint-initdb.d/02-init.sh
     networks:
       - app_net
     healthcheck:
@@ -572,7 +572,7 @@ services:
     environment:
       SUPERSET_SECRET_KEY: artoo-demo-key
       SUPERSET_DATABASE_URI: ${SUPERSET_DATABASE_URI:-postgresql://artoo_demo:artoo_demo@postgresql:5432/superset}
-      HOTEL_DEMO_URI: ${HOTEL_DEMO_URI:-postgresql+psycopg2://artoo_demo:artoo_demo@postgresql:5432/hotel_demo}
+      DEMO_DATA_URI: ${DEMO_DATA_URI:-postgresql+psycopg2://artoo_demo:artoo_demo@postgresql:5432/artoo_demo}
       MAPBOX_API_KEY: ""
     networks:
       - app_net

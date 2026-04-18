@@ -1,25 +1,29 @@
-.PHONY: up down seed enrich api bootstrap crawl demo demo-full _demo-banner logs ps help test lint
+.PHONY: restart down seed enrich api bootstrap crawl demo demo-full _demo-banner logs ps help test lint
 
 COMPOSE_FILES=-f docker-compose.yml
 
+# Demo profile: selects which demo data to load (demos/<profile>/)
+DEMO_PROFILE ?= hotel
+
 # Local DSN to seed from host; override if needed
-POSTGRES_DSN_LOCAL ?= postgresql://artoo_demo:artoo_demo@localhost:5432/hotel_demo
+POSTGRES_DSN_LOCAL ?= postgresql://artoo_demo:artoo_demo@localhost:5432/artoo_demo
 
 help:
-	@echo "make up        - levanta stack OM + overrides"
-	@echo "make seed      - carga datos demo hotel_demo (usa POSTGRES_DSN_LOCAL)"
+	@echo "make demo      - flujo completo: seed + bootstrap + crawl + api"
+	@echo "make demo-full - igual que demo + enrich"
+	@echo "make seed      - carga datos demo en artoo_demo (DEMO_PROFILE=hotel|ecommerce)"
+	@echo "make seed DEMO_PROFILE=ecommerce - carga el demo de ecommerce"
 	@echo "make bootstrap - registra el conector PostgreSQL en OpenMetadata y dispara crawl"
 	@echo "make enrich    - ejecuta artoo-enricher (enriquecimiento semántico)"
 	@echo "make api       - levanta artoo-api"
-	@echo "make demo      - up + seed + bootstrap + api (sin enrich: ejecútalo en vivo)"
-	@echo "make demo-full - up + seed + bootstrap + enrich + api (todo automático)"
+	@echo "make restart   - reconstruye y levanta servicios (sin borrar datos)"
 	@echo "make logs      - tail logs"
 	@echo "make ps        - estado contenedores"
 	@echo "make test      - tests unitarios"
 	@echo "make lint      - ruff check + format + mypy"
-	@echo "make down      - baja todo y volúmenes"
+	@echo "make down      - baja todo y borra volúmenes"
 
-up:
+restart:
 	docker compose $(COMPOSE_FILES) build artoo-api artoo-enricher superset
 	docker compose $(COMPOSE_FILES) up -d
 
@@ -30,11 +34,18 @@ logs:
 	docker compose $(COMPOSE_FILES) logs -f
 
 seed:
+	@if [ ! -d "demos/$(DEMO_PROFILE)" ]; then \
+		echo "ERROR: Demo profile 'demos/$(DEMO_PROFILE)' not found."; \
+		echo "Available profiles:"; \
+		ls -1 demos/ 2>/dev/null | sed 's/^/  - /' || echo "  (none)"; \
+		exit 1; \
+	fi
+	@echo "Loading demo profile: $(DEMO_PROFILE)"
 	docker compose $(COMPOSE_FILES) build artoo-api
 	docker compose $(COMPOSE_FILES) up -d postgresql
 	@echo "Waiting for PostgreSQL..."
 	@sleep 3
-	docker compose $(COMPOSE_FILES) run --rm artoo-api uv run python postgres/seed.py
+	docker compose $(COMPOSE_FILES) run --rm artoo-api uv run python demos/$(DEMO_PROFILE)/seed.py
 
 bootstrap:
 	docker compose $(COMPOSE_FILES) build artoo-enricher
@@ -52,6 +63,8 @@ crawl:
 	docker exec \
 		-e OPENMETADATA_INGEST_TOKEN=$$TOKEN \
 		-e ARTOO_DB_PASSWORD=$${ARTOO_DB_PASSWORD:-artoo_demo} \
+		-e OM_SERVICE_NAME=$${OM_SERVICE_NAME:-artoo-postgres} \
+		-e OM_DATABASE=$${OM_DATABASE:-artoo_demo} \
 		openmetadata_ingestion \
 		bash -c 'envsubst < /opt/openmetadata/ingest.yaml > /tmp/ingest.yaml && metadata ingest -c /tmp/ingest.yaml'
 
@@ -70,10 +83,10 @@ lint:
 	uv run ruff format .
 	uv run mypy src/
 
-demo: up seed bootstrap crawl api
+demo: restart seed bootstrap crawl api
 	@$(MAKE) _demo-banner
 
-demo-full: up seed bootstrap crawl enrich api
+demo-full: restart seed bootstrap crawl enrich api
 	@$(MAKE) _demo-banner
 
 _demo-banner:

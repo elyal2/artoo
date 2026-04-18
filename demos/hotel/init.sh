@@ -6,11 +6,11 @@ DB_PASSWORD="${ARTOO_DB_PASSWORD:?ARTOO_DB_PASSWORD is required}"
 
 psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" <<-SQL
     CREATE ROLE artoo_demo LOGIN PASSWORD '${DB_PASSWORD}';
-    CREATE DATABASE hotel_demo OWNER artoo_demo;
+    CREATE DATABASE artoo_demo OWNER artoo_demo;
     CREATE DATABASE superset   OWNER artoo_demo;
 SQL
 
-psql -v ON_ERROR_STOP=1 --username artoo_demo --dbname hotel_demo <<-SQL
+psql -v ON_ERROR_STOP=1 --username artoo_demo --dbname artoo_demo <<-SQL
     CREATE TABLE IF NOT EXISTS cust (
         cust_id      SERIAL PRIMARY KEY,
         cust_fname   VARCHAR(50)  NOT NULL,

@@ -1,13 +1,15 @@
-# ARTOO (PoC)
+# ARTOO
 
-Demo técnico: **catálogo semántico (OpenMetadata) + LLM** para pasar de preguntas en lenguaje natural a SQL **fundamentado en el esquema**, con una base PostgreSQL de ejemplo (hotel). Detalle funcional y de arquitectura: [`ARTOO_PoC_Specification.md`](ARTOO_PoC_Specification.md).
+**Catálogo semántico (OpenMetadata) + LLM** — de preguntas en lenguaje natural a SQL fundamentado en el esquema.
+
+El framework es **agnóstico al dominio**: conecta a cualquier base de datos, descubre el esquema, lo enriquece con semántica de negocio vía LLM, y permite consultar en lenguaje natural.
 
 ## Requisitos
 
 - **Docker Desktop** (≥ 20.10) con al menos **6 GiB de RAM** asignados
 - **Docker Compose** v2
 - **Python 3.12+** y [**uv**](https://docs.astral.sh/uv/) (solo para desarrollo local fuera de Docker)
-- Credenciales AWS para Bedrock en `.env.local` (`AWS_ACCESS_KEY_ID` + `AWS_SECRET_ACCESS_KEY`), u OpenAI/Anthropic según `LLM_PROVIDER`
+- Credenciales LLM: Bedrock (`AWS_ACCESS_KEY_ID` + `AWS_SECRET_ACCESS_KEY`), OpenAI, o Anthropic
 
 ## Puesta en marcha
 
@@ -21,42 +23,50 @@ Edita `.env.local` y rellena al menos:
 
 | Variable | Descripción |
 |---|---|
+| `LLM_PROVIDER` | `bedrock`, `openai` o `anthropic` |
 | `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` | Para Bedrock (IAM key) |
 | `LLM_AWS_REGION` | Región de Bedrock (ej. `eu-south-2`) |
 | `LLM_API_KEY` | Para OpenAI o Anthropic (alternativa a Bedrock) |
 | `ARTOO_DB_PASSWORD` | Contraseña del usuario `artoo_demo` en PostgreSQL |
+| `OPENMETADATA_DB_FILTER` | *(Opcional)* FQN del servicio/base de datos a enriquecer. Si no se define, procesa todas las tablas. |
 
 > `LLM_AWS_PROFILE` debe quedar vacío cuando se usan `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY` — los perfiles SSO no están disponibles dentro de los contenedores Docker.
 
-### 2. Arranca el stack completo
+### 2. Arranca el stack
 
 ```bash
 make demo
 ```
 
-Este comando ejecuta en orden:
+Ejecuta en orden:
 
-1. **`up`** — construye las imágenes propias y levanta todos los servicios
-2. **`seed`** — carga ~500 clientes, 6 propiedades, 5.000 reservas y métricas de revenue en `hotel_demo`
-3. **`bootstrap`** — espera a que OpenMetadata esté sano, registra el servicio PostgreSQL
-4. **`crawl`** — ejecuta el crawler de metadatos directamente via CLI (sin depender de Airflow)
+1. **`up`** — construye imágenes y levanta todos los servicios
+2. **`seed`** — carga datos demo en PostgreSQL
+3. **`bootstrap`** — registra el servicio PostgreSQL en OpenMetadata y dispara el crawl
+4. **`crawl`** — ingesta de metadatos via CLI (sin Airflow)
 5. **`api`** — levanta la API ARTOO en http://localhost:8000
 
-> El servidor OpenMetadata tarda **3-5 minutos** en quedar listo en el primer arranque.
+> OpenMetadata tarda **3-5 minutos** en estar listo en el primer arranque.
 
-### 3. Enriquece el catálogo (antes o durante la demo)
+### 3. Enriquece el catálogo
 
 ```bash
 make enrich
 ```
 
-El enricher:
-- Muestrea filas reales de cada tabla
-- Calcula estadísticas por columna (valores distintos, top values)
-- Para columnas de baja cardinalidad (≤ 20 valores), el LLM infiere el significado de cada código usando los valores reales (ej. `CNCL=Cancelled, CONF=Confirmed`)
-- Escribe descripciones y nombres de negocio en OpenMetadata
+El enricher ejecuta dos pasos:
 
-Esto es lo que permite al chat responder correctamente preguntas como "¿cuántas cancelaciones?" usando `bk_status = 'CNCL'` en lugar de inventar `'Cancelled'`.
+**Bootstrap de taxonomía** (idempotente):
+- Clasificaciones `PIIType` y `DataSensitivity`
+- Glosario `BusinessTerms`
+- Custom property `commonQueries` en el tipo `table`
+
+**Enriquecimiento semántico por tabla**:
+- Muestrea filas reales y calcula estadísticas por columna
+- Para columnas de baja cardinalidad (≤ 20 valores), el LLM documenta cada código
+- Escribe en OpenMetadata: descripciones, tags PII, sensibilidad, tiers, dominios, glosario
+
+Esto permite al chat generar SQL correcto usando los valores codificados reales del esquema.
 
 ## URLs
 
@@ -67,69 +77,53 @@ Esto es lo que permite al chat responder correctamente preguntas como "¿cuánta
 | Superset | http://localhost:8088 | `admin` / `admin` |
 | Airflow | http://localhost:8080 | `admin` / `admin` |
 
-> Superset arranca con la conexión a `hotel_demo` **ya preconfigurada**. Ve a SQL Lab y empieza a explorar sin configuración adicional.
-
 ## Makefile
 
-| Objetivo | Descripción |
+| Comando | Descripción |
 |---|---|
 | `make demo` | Flujo completo: `up` → `seed` → `bootstrap` → `crawl` → `api` |
+| `make demo-full` | Igual que `demo` + `enrich` |
 | `make up` | Construye imágenes propias y levanta todos los servicios |
-| `make seed` | Carga datos demo en `hotel_demo` |
+| `make seed` | Carga datos demo en PostgreSQL |
 | `make bootstrap` | Registra PostgreSQL en OpenMetadata |
-| `make crawl` | Ejecuta el crawl de metadatos via CLI (bypasa Airflow) |
+| `make crawl` | Ejecuta el crawl de metadatos via CLI |
 | `make enrich` | Enriquecimiento semántico LLM → catálogo |
 | `make api` | Levanta `artoo-api` |
 | `make test` | Pytest con cobertura |
 | `make lint` | Ruff + mypy |
 | `make down` | Para servicios y borra todos los volúmenes |
 
-## Guion de demo en vivo (~5-7 min)
-
-### Preparación (sin audiencia)
-
-Ejecuta `make demo` la noche anterior o con tiempo. Deja el enrich **sin ejecutar** para mostrar el efecto en directo.
-
-### Narrativa sugerida
-
-1. **"El antes"** — Abre **Superset** (http://localhost:8088): el esquema es críptico (`bkng`, `bk_status`, `cust_tier`…). Responder una pregunta de negocio exige conocer los códigos internos (`CNCL`, `BRZ`, etc.).
-
-2. **Chat sin contexto semántico** — Abre http://localhost:8000 y pregunta "¿cuántos clientes premium?". El LLM inventará `cust_tier = 'premium'` → 0 resultados.
-
-3. **Catálogo sin enriquecer** — Abre **OpenMetadata** (http://localhost:8585): tablas y columnas descubiertas pero sin descripciones de negocio.
-
-4. **Enriquecimiento en vivo** — En terminal visible:
-   ```bash
-   make enrich
-   ```
-   El enricher muestrea datos reales, llama al LLM y escribe al catálogo en tiempo real.
-
-5. **Catálogo después** — Refresca OpenMetadata: `bk_status` ahora dice `CONF=Confirmed, CNCL=Cancelled, COMP=Completed, NOSH=No-Show`.
-
-6. **"El después" (chat)** — Mismas preguntas, resultados correctos:
-   - *¿Cuántos clientes premium tenemos?* → usa `cust_tier = 'PLT'`
-   - *¿Qué propiedad tiene más cancelaciones?* → usa `bk_status = 'CNCL'`
-   - *Top 10 clientes por gasto total*
-   - *NPS medio por propiedad y categoría de habitación*
-
-**Cierre:** el patrón es **conectar → crawlear → enriquecer → preguntar en natural**. El origen puede ser este PostgreSQL o el del cliente.
-
 ## API
 
 | Endpoint | Descripción |
 |---|---|
 | `POST /api/query` | `{"question": "..."}` — pregunta en lenguaje natural |
+| `POST /api/query` con historial | `{"question": "...", "history": [{"role": "user", "content": "..."}]}` — conversación multi-turno |
 | `GET /api/tables` | Lista tablas del catálogo |
 | `GET /api/table/{fqn}` | Detalle de una tabla |
 | `GET /health` | Estado de la API |
-| `/mcp` | Endpoint MCP (herramientas `query_data`, `list_tables`, `describe_table`) |
+| `/mcp` | Endpoint MCP (`query_data`, `list_tables`, `describe_table`) |
+
+## Chat UI
+
+La interfaz web en http://localhost:8000 ofrece:
+
+- **Entrada en lenguaje natural** — escribe preguntas en texto plano
+- **Respuestas conversacionales** — si la pregunta no requiere datos (saludos, preguntas sobre el sistema), responde directamente sin generar SQL
+- **Resultados con chart o tabla** — el LLM elige el tipo de gráfico más adecuado (bar, line, bubble, heatmap, donut, etc.) y genera código D3 v7
+- **Historial de conversación** — el contexto de preguntas anteriores se mantiene para queries multi-turno
+- **Panel de ayuda** — botón `?` en el header que muestra todos los tipos de gráfico disponibles con ejemplos
+- **Tema claro/oscuro** — toggle en el header, persistido en localStorage
+- **Sidebar con tablas** — lista de tablas disponibles del catálogo con descripción y dominio
 
 ## Desarrollo local (sin Docker)
 
 ```bash
 uv sync --all-extras
-uv run pytest
-uv run ruff check .
+uv run python -m pytest          # todos los tests
+uv run python -m pytest --cov=src/artoo  # con cobertura
+uv run ruff check . --fix
+uv run ruff format .
 uv run mypy src/
 ```
 
@@ -139,34 +133,41 @@ uv run mypy src/
 ┌─────────────┐    pregunta NL    ┌──────────────────────────────────┐
 │  Chat / MCP │ ────────────────► │          artoo-api               │
 └─────────────┘                   │  FastAPI + QueryPipeline         │
+                                  │  • clasificación de intención    │
                                   │  • contexto semántico de OM      │
                                   │  • LLM genera SQL                │
+                                  │  • EXPLAIN dry-run de validación │
                                   │  • asyncpg ejecuta en Postgres   │
-                                  └──────────┬───────────────────────┘
+                                  └─────────────────────────────────┘
                                              │ lee catálogo
                                   ┌──────────▼───────────────────────┐
                                   │       OpenMetadata               │
-                                  │  • tablas, columnas, FKs         │
-                                  │  • descripciones + códigos       │
-                                  │  • clasificaciones PII           │
+                                   │  • tablas, columnas, FKs         │
+                                   │  • descripciones + códigos       │
+                                   │  • clasificaciones PII           │
+                                   │  • sensibilidad por columna      │
+                                   │  • tiers, dominios, glosario     │
                                   └──────────▲───────────────────────┘
                                              │ enriquece
                                   ┌──────────┴───────────────────────┐
-                                  │       artoo-enricher             │
-                                  │  • muestrea filas reales         │
-                                  │  • stats por columna             │
-                                  │  • LLM infiere semántica         │
-                                  │  • documenta códigos exactos     │
+                                   │       artoo-enricher             │
+                                   │  • muestrea filas reales         │
+                                   │  • stats por columna             │
+                                   │  • LLM infiere semántica         │
+                                   │  • documenta códigos exactos     │
+                                   │  • PII, sensibilidad, tier       │
+                                   │  • dominios y glosario           │
                                   └──────────────────────────────────┘
 ```
 
 ## Notas técnicas
 
 - **Credenciales AWS en Docker**: los perfiles SSO (`~/.aws`) no están disponibles dentro de los contenedores. Usar `AWS_ACCESS_KEY_ID` + `AWS_SECRET_ACCESS_KEY` directamente en `.env.local`.
-- **Airflow vs CLI**: el contenedor de ingestion usa Airflow 3.x que es incompatible con el plugin de OpenMetadata 1.12. El `make crawl` ejecuta `metadata ingest` directamente via CLI, bypasando Airflow por completo.
-- **Columnas codificadas**: el enricher detecta columnas con ≤ 20 valores distintos y el LLM documenta cada código con su significado de negocio. Esto es crítico para que el query pipeline genere SQL correcto.
-- **OpenMetadata login**: usar `admin` / `admin` (credenciales por defecto). Si se bloquea la cuenta por intentos fallidos, esperar ~5 minutos.
-- **Superset**: imagen custom (`superset/Dockerfile`) basada en `apache/superset:4.1.2` con `psycopg2-binary`. La conexión a `hotel_demo` se preregistra automáticamente en el arranque.
+- **Airflow vs CLI**: el contenedor de ingestion usa Airflow 3.x incompatible con el plugin de OpenMetadata 1.12. `make crawl` ejecuta `metadata ingest` directamente via CLI.
+- **Columnas codificadas**: el enricher detecta columnas con ≤ 20 valores distintos y el LLM documenta cada código con su significado de negocio. Crítico para SQL correcto.
+- **Governance genérico**: el enricher no asume ningún dominio. Los dominios se infieren del LLM y se crean automáticamente en OpenMetadata. Funciona con cualquier esquema.
+- **OpenMetadata login**: `admin` / `admin` (defecto). Si se bloquea la cuenta, esperar ~5 minutos.
+- **Superset**: imagen custom basada en `apache/superset:4.1.2` con `psycopg2-binary`. La conexión a la demo se preregistra automáticamente.
 - **Volúmenes**: `make down` borra volúmenes Docker y `docker-volume/db-data-postgres/`. Si falla por permisos: `sudo rm -rf docker-volume/db-data-postgres`.
 
 ---

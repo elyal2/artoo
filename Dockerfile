@@ -16,7 +16,7 @@ COPY pyproject.toml ./
 RUN uv pip install --system .
 
 COPY src ./src
-COPY postgres ./postgres
+COPY demos ./demos
 COPY openmetadata ./openmetadata
 COPY _docs ./_docs
 COPY .env.example ./.env.example

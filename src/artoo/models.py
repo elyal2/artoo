@@ -36,15 +36,21 @@ class ColumnEnrichment(BaseModel):
     def coerce_example_values(cls, v: Any) -> Optional[str]:
         if isinstance(v, list):
             return ", ".join(str(i) for i in v)
-        return v
+        return v if isinstance(v, str) else None
 
 
 class TableEnrichment(BaseModel):
     table_description: str
     business_domain: Optional[str] = None
+    tier: int = Field(default=3, ge=1, le=5)
     columns: Dict[str, ColumnEnrichment]
     suggested_tags: List[str] = Field(default_factory=list)
     common_queries: List[str] = Field(default_factory=list)
+
+
+class IntentResponse(BaseModel):
+    intent: Literal["data_query", "conversational"]
+    reply: Optional[str] = None
 
 
 class SQLResponse(BaseModel):
@@ -54,13 +60,40 @@ class SQLResponse(BaseModel):
     reasoning: Optional[str] = None
 
 
+class ChartSpec(BaseModel):
+    chart_type: Literal[
+        "line",
+        "area",
+        "stacked_area",
+        "bar",
+        "horizontal_bar",
+        "grouped_bar",
+        "stacked_bar",
+        "scatter",
+        "bubble",
+        "histogram",
+        "boxplot",
+        "heatmap",
+        "calendar_heatmap",
+        "treemap",
+        "pie",
+        "donut",
+        "table",
+        "none",
+    ]
+    analysis: Optional[str] = None
+    d3_code: Optional[str] = None
+
+
 class QueryResponse(BaseModel):
     question: str
-    sql: str
+    sql: Optional[str] = None
     explanation: str
-    rows: List[Dict[str, Any]]
-    tables_used: List[str]
-    confidence: str
+    rows: List[Dict[str, Any]] = Field(default_factory=list)
+    tables_used: List[str] = Field(default_factory=list)
+    confidence: str = "high"
+    column_labels: Dict[str, str] = Field(default_factory=dict)
+    chart_spec: Optional[ChartSpec] = None
 
 
 class TableSummary(BaseModel):
@@ -72,9 +105,22 @@ class TableSummary(BaseModel):
 class TableDetail(BaseModel):
     name: str
     description: Optional[str] = None
+    display_name: Optional[str] = None
     business_domain: Optional[str] = None
     columns: List[ColumnMeta]
     foreign_keys: List[str] = Field(default_factory=list)
+
+
+class SchemaColumn(BaseModel):
+    name: str
+    data_type: str
+    is_temporal: bool = False
+    is_numeric: bool = False
+
+
+class ConversationMessage(BaseModel):
+    role: Literal["user", "assistant"]
+    content: Optional[str] = None
 
 
 __all__ = [
@@ -84,6 +130,8 @@ __all__ = [
     "TableEnrichment",
     "SQLResponse",
     "QueryResponse",
+    "ChartSpec",
     "TableSummary",
     "TableDetail",
+    "ConversationMessage",
 ]

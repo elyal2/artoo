@@ -32,6 +32,7 @@ async def _process_table(
 async def run_enrichment() -> None:
     configure_logging()
     om_client = await get_default_client()
+    await om_client.ensure_governance_taxonomy()
     tables = await om_client.list_tables()
     collector = SchemaCollector(om_client, sample_rows=settings.sample_rows)
     enricher = SemanticEnricher()
