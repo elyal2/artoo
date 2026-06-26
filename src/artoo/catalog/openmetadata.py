@@ -81,7 +81,7 @@ class OpenMetadataClient:
         after: str | None = None
         db_filter = settings.openmetadata_db_filter
         while True:
-            url = f"{self.base_url}/api/v1/tables?fields=description,tags,usageSummary&limit=100"
+            url = f"{self.base_url}/api/v1/tables?fields=description,tags,usageSummary,domain&limit=100"
             if db_filter:
                 url += f"&database={quote(db_filter, safe='')}"
             if after:
@@ -94,12 +94,14 @@ class OpenMetadataClient:
                 fqn = item.get("fullyQualifiedName", item.get("name", ""))
                 if any(s in fqn for s in ("information_schema", "pg_catalog")):
                     continue
-                # Domain is not available in list endpoint; fetch per-table if needed
+                # Extract domain name if present
+                domain_obj = item.get("domain")
+                domain_name = domain_obj.get("name") if domain_obj else None
                 all_items.append(
                     TableSummary(
                         name=fqn,
                         description=item.get("description"),
-                        business_domain=None,
+                        business_domain=domain_name,
                     )
                 )
             paging = payload.get("paging", {})
@@ -111,36 +113,19 @@ class OpenMetadataClient:
     async def get_table(self, fqn: str) -> TableDetail:
         url = (
             f"{self.base_url}/api/v1/tables/name/{fqn}"
-            "?fields=columns,tableConstraints,usageSummary,domains"
+            "?fields=columns,tableConstraints,usageSummary,tags"
         )
         resp = await self._get(url)
         resp.raise_for_status()
         raw = resp.json()
-
-        cols = [
-            ColumnMeta(
-                name=c["name"],
-                data_type=c.get("dataType", ""),
-                description=c.get("description"),
-                business_name=c.get("displayName"),
-                foreign_key=self._fk_name(c),
-            )
-            for c in raw.get("columns", [])
-        ]
-        # domains is a list in 1.12.x — take the first entry's name
-        domains: list[Any] = raw.get("domains") or []
-        business_domain = self._domain_name(domains[0]) if domains else None
-        return TableDetail(
-            name=raw.get("fullyQualifiedName", raw.get("name")),
-            description=raw.get("description"),
-            display_name=raw.get("displayName"),
-            business_domain=business_domain,
-            columns=cols,
-            foreign_keys=[fk for fk in (self._fk_name(c) for c in raw.get("columns", [])) if fk],
-        )
-        resp = await self._get(url)
-        resp.raise_for_status()
-        raw = resp.json()
+        
+        # Debug logging
+        import logging
+        logger = logging.getLogger(__name__)
+        if 'indicadores_economicos' in fqn:
+            for col in raw.get("columns", []):
+                if 'pib' in col['name']:
+                    logger.info("DEBUG: Column %s tags: %s", col['name'], col.get('tags', []))
 
         # Build per-column example values from sampleData if available.
         # sampleData.columns is a list of column names; sampleData.rows is a list of value lists.
@@ -166,17 +151,23 @@ class OpenMetadataClient:
                 description=c.get("description"),
                 business_name=c.get("displayName"),
                 foreign_key=self._fk_name(c),
+                tags=[t["tagFQN"] for t in c.get("tags", [])],
                 example_values=", ".join(sample_by_col[c["name"]])
                 if c["name"] in sample_by_col
                 else None,
             )
             for c in raw.get("columns", [])
         ]
+        
+        # domains is a list in 1.12.x — take the first entry's name
+        domains: list[Any] = raw.get("domains") or []
+        business_domain = self._domain_name(domains[0]) if domains else None
+        
         return TableDetail(
             name=raw.get("fullyQualifiedName", raw.get("name")),
             description=raw.get("description"),
             display_name=raw.get("displayName"),
-            business_domain=self._domain_name(raw.get("domain")),
+            business_domain=business_domain,
             columns=cols,
             foreign_keys=[fk for fk in (self._fk_name(c) for c in raw.get("columns", [])) if fk],
         )
@@ -218,10 +209,21 @@ class OpenMetadataClient:
         return None
 
     async def semantic_search(self, query: str, n_results: int = 5) -> list[TableDetail]:
-        encoded_q = quote(query, safe="")
+        # Normalize query: strip extra whitespace, replace newlines with spaces
+        normalized = " ".join(query.split())
+        encoded_q = quote(normalized, safe="")
         url = f"{self.base_url}/api/v1/search/query?q={encoded_q}&index=table_search_index&from=0&size={n_results}"
-        resp = await self._get(url)
-        resp.raise_for_status()
+        try:
+            resp = await self._get(url)
+            resp.raise_for_status()
+        except httpx.HTTPStatusError as exc:
+            logger.warning(
+                "Semantic search failed (status %s): %s. Falling back to empty results.",
+                exc.response.status_code,
+                exc,
+            )
+            return []
+        
         hits = resp.json().get("hits", {}).get("hits", [])
         results: list[TableDetail] = []
         for hit in hits:
@@ -471,6 +473,33 @@ class OpenMetadataClient:
             )
         except Exception as exc:
             logger.warning("Taxonomy bootstrap step failed (BusinessTerms glossary): %s", exc)
+
+        # ── Unit of Measure glossary ────────────────────────────────────────
+        try:
+            await self.ensure_glossary(
+                "UnidadesMedida",
+                "Unidades de Medida",
+                "Standardized units of measure for numeric columns. Each term documents the conversion factor to base units.",
+            )
+        except Exception as exc:
+            logger.warning("Taxonomy bootstrap step failed (UnidadesMedida glossary): %s", exc)
+        
+        # Create standard unit terms
+        unit_terms = {
+            "Millones_EUR": ("Millones de Euros", "1 unidad = 1.000.000€. Para convertir a euros base: dividir por 1.000.000. Columnas: *_millones_eur, *_mill, *_meur"),
+            "Miles_EUR": ("Miles de Euros", "1 unidad = 1.000€. Para convertir a euros base: dividir por 1.000. Columnas: *_miles_eur, *_k"),
+            "Euros": ("Euros (unidad base)", "1 unidad = 1€. Sin conversión necesaria. Columnas: *_eur, *precio*, *gasto*, *cost*"),
+            "Porcentaje_0_100": ("Porcentaje (0-100)", "Valor porcentual en escala 0-100. Para convertir a ratio decimal: dividir por 100. Columnas: *_pct, *_percent"),
+            "Ratio_Decimal": ("Ratio (0.0-1.0)", "Ratio decimal entre 0.0 y 1.0. Para convertir a porcentaje: multiplicar por 100. Columnas: *_ratio"),
+            "Dias": ("Días", "Duración en días. 1 unidad = 24 horas. Columnas: *_days, *_d"),
+            "Unidades_Fisicas": ("Unidades Físicas", "Cantidad de items (no monetarias). Columnas: *_qty, *_count, numero_*"),
+        }
+        
+        for term_name, (display_name, description) in unit_terms.items():
+            try:
+                await self.ensure_glossary_term("UnidadesMedida", term_name, display_name, description)
+            except Exception as exc:
+                logger.warning("Failed to create unit term %s: %s", term_name, exc)
 
         try:
             await self.register_table_custom_property(

@@ -1,5 +1,6 @@
 .env
 .env.local
+.env.local.bak*
 .venv/
 __pycache__/
 *.pyc
@@ -8,7 +9,14 @@ dist/
 build/
 .uv_cache/
 .ruff_cache/
+.mypy_cache/
+.pytest_cache/
 *.generated.ts
 docker-volume/
 *.bak
 *.sh.bak
+.DS_Store
+*.sql
+backup_*.sql
+*.old
+*.tmp

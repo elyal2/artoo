@@ -13,7 +13,7 @@ Respond with JSON:
   "tier": 1-5,
   "columns": {
     "<column_name>": {
-      "description": "Business meaning. For LOW CARDINALITY columns, you MUST list every value: 'VALUE1=Meaning1, VALUE2=Meaning2'. Only values from top_values.",
+      "description": "Business meaning. For LOW CARDINALITY columns, you MUST list every value: 'VALUE1=Meaning1, VALUE2=Meaning2'. Only values from top_values. MANDATORY UNIT DOCUMENTATION: If the column name ends with _millones, _miles, _mill, _pct, _eur, _usd, or similar unit suffixes, your description MUST include this exact phrase: '(1 unit = X)' where X is the conversion factor. Example: 'GDP in millions of euros (1 unit = 1,000,000€)' or 'Percentage from 0-100 (1 unit = 1%, divide by 100 for decimal form)'.",
       "business_name": "Human-readable name",
       "pii": true/false,
       "pii_type": "name|email|phone|dob|national_id|null",
@@ -29,6 +29,7 @@ RULES:
 - Derive descriptions from DATA, not names. A column with coded categorical values means a business category/code field, not a literal reading of the column name.
 - Derive domain from the specific VALUES and PATTERNS, not the table name. Let the observed data drive the domain label.
 - For low-cardinality columns (distinct_count <= 20), ALWAYS list ALL values with their meaning using exact values from top_values.
+- CRITICAL UNIT DOCUMENTATION: When a column name contains unit indicators (_millones_eur, _miles, _pct, _kg, _mt, etc.), the description MUST explicitly state the unit and its conversion factor. This is essential for correct SQL calculations when joining columns with different units.
 - Flag PII conservatively.
 - Be specific and data-driven.
 
@@ -57,10 +58,11 @@ Rules:
 3. If a question asks for a time series or growth, use a REAL temporal column from the schema context. If none exists, do not fabricate one; instead use a non-temporal aggregation and explain the limitation.
 4. Use the EXACT coded values documented in the column descriptions (e.g., if description says 'tier: BRZ=Bronze, SLV=Silver, GLD=Gold', use 'BRZ' not 'Bronze').
 5. CRITICAL — JOINS: Only join two tables using a column that is explicitly listed in BOTH tables' COLUMNS sections AND appears in the RELATIONSHIPS section connecting them. Never invent join columns. If no direct FK path exists between two tables, route through a bridge/junction table whose relationships are declared in the schema (e.g., to reach 'products' from 'orders' you must go through 'order_items': orders JOIN order_items ON orders.order_id = order_items.order_id JOIN products ON order_items.product_id = products.product_id).
-6. Add LIMIT 100 unless the user asks for all results.
-7. Always SELECT individual columns — never use json_build_object, row_to_json, array_agg, or any JSON-wrapping function. Each value must be its own column.
-8. Always assign a short alias to every table (e.g. FROM bkng b, FROM prop p) and qualify EVERY column reference with its table alias (e.g. b.tot_amt, p.prop_name). Never reference a column without its table alias when more than one table is in scope.
-9. Return ONLY valid JSON with no prose before or after it:
+6. CRITICAL — UNIT CONVERSION: Before writing ANY arithmetic expression involving two columns, check their descriptions for unit documentation (look for "(1 unit = ...)"). If units differ, you MUST apply conversion factors. Example: if pib_millones_eur has "(1 unit = 1,000,000€)" and gasto_medio_eur has "(1 unit = 1€)", then to calculate gasto_medio_eur as % of PIB you must write: (gasto_medio_eur / 1000000 / pib_millones_eur) * 100. If you see "_millones" or "_mill" in a column name and multiply/divide it with a non-millions column, divide the non-millions value by 1,000,000 first. Never ignore unit scale differences.
+7. Add LIMIT 100 unless the user asks for all results.
+8. Always SELECT individual columns — never use json_build_object, row_to_json, array_agg, or any JSON-wrapping function. Each value must be its own column.
+9. Always assign a short alias to every table (e.g. FROM bkng b, FROM prop p) and qualify EVERY column reference with its table alias (e.g. b.tot_amt, p.prop_name). Never reference a column without its table alias when more than one table is in scope.
+10. Return ONLY valid JSON with no prose before or after it:
    {"sql": "SELECT ...", "tables_used": ["table1"], "confidence": "high|medium|low", "reasoning": "list each table needed, the FK join path used (e.g. orders→order_items→products), and confirm every column exists in the listed table"}
 """
 
@@ -68,7 +70,7 @@ INTENT_SYSTEM_PROMPT = """
 You are a routing assistant for a data analytics chat interface.
 
 Classify the user message into one of two intents:
-- "data_query": the user wants to retrieve, analyze, visualize, or explore data (counts, trends, rankings, comparisons, charts, SQL, etc.)
+- "data_query": the user wants to retrieve, analyze, visualize, or explore data (counts, trends, rankings, comparisons, charts, SQL, etc.). This includes hypothetical or scenario-based questions that require examining actual data to answer.
 - "conversational": the user is asking a meta question, greeting, asking how the system works, requesting an explanation of a previous result, or saying something that does not require querying a database.
 
 Consider conversation history when classifying: if the user asks "why?" or "what does that mean?" after a data query, it is "conversational" (they want an explanation of the previous result, not a new query).
@@ -76,20 +78,25 @@ Consider conversation history when classifying: if the user asks "why?" or "what
 Return ONLY valid JSON: {"intent": "data_query"|"conversational", "reply": "<reply if conversational, else null>"}
 
 For "conversational" intent, write a short, direct reply (2-4 sentences max). Be factual. Do not mention SQL or technical internals unless asked.
-Examples of conversational replies:
-- "I analyse data from the connected database and answer questions in natural language. Ask me about trends, comparisons, counts, or explanations of results."
-- "The negative values indicate that the most recent period is incomplete, so year-over-year comparisons can show an apparent drop."
 """
 
 
 EXPLANATION_SYSTEM_PROMPT = """
-You are a data engine. Output a concise summary of the query result.
+You are a data engine. Output a concise summary that directly answers the user's question using the query results.
 Rules:
 1. 1-3 sentences maximum.
 2. No conversational filler ('Certainly', 'Here is', 'Hope this helps').
 3. No meta-commentary about the data or the query.
-4. State the facts directly.
-5. If the result is a list, summarize the trend or the top item. Do not list every row.
+4. State the facts directly from the returned data.
+5. CRITICAL: Your answer must address the user's original question. If they ask a hypothetical question ("what if X?"), use the data to answer it. If they ask for a comparison, compare. If they ask for a trend, describe it.
+6. If the result is a list, summarize the trend or the top item. Do not list every row.
+7. CRITICAL: Quote exact values from the data. Never invent, round, or extrapolate numbers not present in the result set.
+8. If a number appears in your summary, it must match a value in the 'sample' data exactly.
+9. CRITICAL — TEMPORAL LOGIC: When describing changes between time periods, verify the direction is correct:
+   - "decreased from X to Y" requires X > Y
+   - "increased from X to Y" requires X < Y
+   - When comparing multiple time periods, identify the correct sequence from the data (earliest to latest, or as requested by the user)
+10. CRITICAL — UNIT CONTEXT: When presenting numeric values, include unit context from column descriptions if available (e.g., "3078 million euros" not just "3078").
 """
 
 
@@ -199,6 +206,8 @@ AXES & LABELS:
 - stacked_area: use `d3.stack()` with keys. Order layers bottom-up.
 - Lines: `d3.curveMonotoneX`. Dots on data points (r=3).
 - Legend mandatory for stacked_area.
+- If the SQL returns numeric date parts (e.g. year/month/day extracted as integers), treat them as plain numeric categories — never call date-only functions like `date_part()` on them in the D3 code.
+- If the query result does not include a real duration field, derive stay length from already-returned dates in JavaScript using plain subtraction on parsed dates or skip the size dimension; never ask SQL to call `date_part()` on an integer.
 
 **bar / grouped_bar / stacked_bar:**
 - `d3.scaleBand()` for categories, `d3.scaleLinear()` for values.
@@ -217,6 +226,7 @@ AXES & LABELS:
 - bubble: radius = `d3.scaleSqrt()` mapped to 3rd dimension. Min r=4, max r=28.
 - bubble domains: ALWAYS extend X and Y domains by the max pixel radius converted back to data units so no bubble is clipped. Compute `const maxR = 28; const xPad = (xMax - xMin) * 0.12 + maxR; const yPad = (yMax - yMin) * 0.12 + maxR;` and use `[xMin - xPad, xMax + xPad]` / `[yMin - yPad, yMax + yPad]`.
 - bubble labels: draw the category name as a `<text>` centered on each bubble (font-size 10, fill=`onFill` from the theme block above, pointer-events none). Hide the label if the bubble radius is < 14px.
+- If the data includes a stay-length / duration-like numeric field, use it directly as the 3rd dimension; never try to compute it with `date_part()` or `EXTRACT()` inside the chart code.
 
 **histogram:**
 - `d3.bin()` on the numeric column. Continuous X axis (no gaps).

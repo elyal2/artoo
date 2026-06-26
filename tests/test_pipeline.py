@@ -95,7 +95,10 @@ async def test_pipeline_executes_query(monkeypatch):
         foreign_keys=[],
     )
     catalog = FakeCatalog(table)
-    pipeline = QueryPipeline(catalog, llm=FakeLLM())
+    fake_llm = FakeLLM()
+    pipeline = QueryPipeline(
+        catalog, llm=fake_llm, intent_llm=fake_llm, explanation_llm=fake_llm
+    )
 
     fake_pool = FakePool()
     monkeypatch.setattr(pipeline, "_pool", fake_pool)
@@ -116,7 +119,10 @@ async def test_pipeline_rejects_unknown_columns(monkeypatch):
         foreign_keys=[],
     )
     catalog = FakeCatalogWithTemporal(table)
-    pipeline = QueryPipeline(catalog, llm=FakeLLM())
+    fake_llm = FakeLLM()
+    pipeline = QueryPipeline(
+        catalog, llm=fake_llm, intent_llm=fake_llm, explanation_llm=fake_llm
+    )
     monkeypatch.setattr(pipeline, "_pool", FakePool())
 
     async def fake_complete(*, system, user, model=None, max_tokens=None):  # noqa: ANN001

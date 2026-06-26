@@ -26,6 +26,14 @@ class Settings(BaseSettings):
     # LLM
     llm_provider: LLMProvider = Field(default=LLMProvider.BEDROCK)
     llm_model: str = Field(default="eu.amazon.nova-lite-v1:0")
+    llm_intent_model: Optional[str] = Field(
+        default=None,
+        description="LLM model for intent classification (defaults to llm_model). Use a more capable model for better conversational/data_query routing.",
+    )
+    llm_explanation_model: Optional[str] = Field(
+        default=None,
+        description="LLM model for result explanation (defaults to llm_model). Use a more capable model for better interpretations of complex queries.",
+    )
     llm_chart_model: Optional[str] = Field(
         default=None,
         description="LLM model for chart visualization (defaults to llm_model). Use a more capable model like Claude Sonnet for better charts.",

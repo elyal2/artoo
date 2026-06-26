@@ -10,6 +10,7 @@ import asyncpg
 import sqlglot
 import sqlglot.expressions as exp
 
+from ..catalog.conversion_rules import generate_conversion_rules
 from ..catalog.openmetadata import OpenMetadataClient
 from ..config import settings
 from ..llm.client import LLMClient
@@ -75,9 +76,45 @@ def _extract_sql_response(raw: str) -> SQLResponse:
 
 
 class QueryPipeline:
-    def __init__(self, catalog: OpenMetadataClient, llm: LLMClient | None = None) -> None:
+    def __init__(
+        self,
+        catalog: OpenMetadataClient,
+        llm: LLMClient | None = None,
+        intent_llm: LLMClient | None = None,
+        explanation_llm: LLMClient | None = None,
+    ) -> None:
         self.catalog = catalog
         self.llm = llm or LLMClient.default()
+        # Use separate model for intent if configured
+        if intent_llm:
+            self.intent_llm = intent_llm
+        elif settings.llm_intent_model:
+            self.intent_llm = LLMClient(
+                provider=settings.llm_provider,
+                model=settings.llm_intent_model,
+                api_key=settings.llm_api_key,
+                max_tokens=settings.llm_max_tokens,
+                temperature=settings.llm_temperature,
+                aws_profile=settings.llm_aws_profile,
+                aws_region=settings.llm_aws_region,
+            )
+        else:
+            self.intent_llm = self.llm
+        # Use separate model for explanations if configured
+        if explanation_llm:
+            self.explanation_llm = explanation_llm
+        elif settings.llm_explanation_model:
+            self.explanation_llm = LLMClient(
+                provider=settings.llm_provider,
+                model=settings.llm_explanation_model,
+                api_key=settings.llm_api_key,
+                max_tokens=settings.llm_max_tokens,
+                temperature=settings.llm_temperature,
+                aws_profile=settings.llm_aws_profile,
+                aws_region=settings.llm_aws_region,
+            )
+        else:
+            self.explanation_llm = self.llm
         self._pool: asyncpg.Pool | None = None
         self._dsn = _pg_dsn(settings.postgres_dsn)
 
@@ -116,7 +153,21 @@ class QueryPipeline:
             if numeric_cols:
                 lines.append(f"NUMERIC COLUMNS: {', '.join(numeric_cols)}")
             parts.append("\n".join(lines))
-        return "\n\n".join(parts)
+        
+        schema = "\n\n".join(parts)
+        
+        # Append unit conversion rules if any columns have UnidadesMedida tags
+        conversion_rules = generate_conversion_rules(tables)
+        if conversion_rules:
+            logger.info("Generated unit conversion rules for %d tables", len(tables))
+            schema += "\n" + conversion_rules
+            # DEBUG: Log sample of conversion rules
+            lines = conversion_rules.split("\n")
+            logger.info("Conversion rules preview (first 10 lines): %s", "\n".join(lines[:10]))
+        else:
+            logger.warning("No unit conversion rules generated (no UnidadesMedida tags found)")
+        
+        return schema
 
     @staticmethod
     def _schema_columns(table: TableDetail) -> list[SchemaColumn]:
@@ -311,7 +362,7 @@ class QueryPipeline:
                 elif msg.role == "assistant":
                     conversation_context += f"Assistant: {msg.content}\n"
 
-        intent_raw = await self.llm.complete(
+        intent_raw = await self.intent_llm.complete(
             system=INTENT_SYSTEM_PROMPT,
             user=f"Conversation history:\n{conversation_context}\nNew message: {question}",
         )
@@ -349,9 +400,35 @@ class QueryPipeline:
             rows = await conn.fetch(sql, timeout=timeout)
         rows_dict = [_serialize_row(dict(r)) for r in rows[: settings.max_result_rows]]
 
-        explanation = await self.llm.complete(
+        # Build explanation context with full statistics
+        sample_for_llm = rows_dict[:5]
+        stats_context: dict = {
+            "question": question,
+            "sql": sql,
+            "sample": sample_for_llm,
+            "total_rows": len(rows_dict),
+        }
+        
+        # Add numeric column ranges if present
+        if rows_dict:
+            numeric_summary: dict[str, dict] = {}
+            for col in rows_dict[0].keys():
+                values = [
+                    r[col] for r in rows_dict 
+                    if col in r and isinstance(r[col], (int, float))
+                ]
+                if values:
+                    numeric_summary[col] = {
+                        "min": min(values),
+                        "max": max(values),
+                        "count": len(values),
+                    }
+            if numeric_summary:
+                stats_context["numeric_ranges"] = numeric_summary
+
+        explanation = await self.explanation_llm.complete(
             system=EXPLANATION_SYSTEM_PROMPT,
-            user=json.dumps({"question": question, "sql": sql, "sample": rows_dict[:5]}),
+            user=json.dumps(stats_context),
         )
 
         column_labels = self._build_column_labels(tables, rows_dict)
@@ -375,6 +452,9 @@ class QueryPipeline:
         if not rows or len(rows) < 2:
             logger.debug("Chart skipped: fewer than 2 rows")
             return None
+        # Keep chart generation grounded in actual returned fields. If the query
+        # did not return a real duration field, the chart model must not invent
+        # one from SQL date functions.
         chart_model = settings.llm_chart_model or None
         logger.info(
             "Chart LLM call starting",

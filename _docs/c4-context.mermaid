@@ -1,21 +1,38 @@
 flowchart TB
-  actor(User)
-  boundary(Chat)["artoo-chat (UI)"]
-  component(API)["artoo-api (FastAPI + MCP)"]
-  component(Intent)["Intent routing"]
-  component(Query)["SQL generation + validation"]
-  component(Chart)["Chart recommendation + D3 render"]
-  database(PG)["PostgreSQL (demo data)"]
-  component(OM)["OpenMetadata"]
-  component(Enricher)["artoo-enricher (LLM)"]
+    subgraph User
+        U[User]
+    end
 
-  User --> Chat
-  Chat --> API
-  API --> Intent
-  Intent -->|conversational| Chat
-  Intent -->|data_query| Query
-  Query --> OM
-  Query --> PG
-  Query --> Chart
-  Enricher --> OM
-  OM --> PG
+    subgraph "artoo System"
+        UI[artoo-chat UI]
+        API[artoo-api FastAPI + MCP]
+        Intent[Intent Classifier]
+        SQL[SQL Generator + Validator]
+        Chart[Chart Recommender + D3 Renderer]
+        Enricher[artoo-enricher LLM]
+    end
+
+    subgraph External
+        OM[OpenMetadata]
+        PG[(PostgreSQL)]
+    end
+
+    U -->|asks questions| UI
+    UI -->|POST /api/query| API
+    API -->|route by intent| Intent
+    Intent -->|conversational| UI
+    Intent -->|data_query| SQL
+    SQL -->|schema + constraints| OM
+    SQL -->|EXPLAIN + execute| PG
+    SQL -->|chart suggestion| Chart
+    Chart -->|D3.js JSON| UI
+    Enricher -->|bootstrap taxonomy| OM
+    Enricher -->|tag columns + tables| OM
+    OM -->|ingests from| PG
+
+    classDef user fill:#e1f5fe,stroke:#01579b,stroke-width:2px
+    classDef system fill:#fff3e0,stroke:#e65100,stroke-width:2px
+    classDef external fill:#f5f5f5,stroke:#616161,stroke-width:2px,stroke-dasharray:5 5
+    class U user
+    class UI,API,Intent,SQL,Chart,Enricher system
+    class OM,PG external

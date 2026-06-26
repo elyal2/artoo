@@ -861,7 +861,12 @@
 
         const data = await res.json();
         conversationHistory.push({ role: 'user', content: q });
-        if (data.sql) conversationHistory.push({ role: 'assistant', content: data.sql });
+        if (data.explanation) {
+          conversationHistory.push({ role: 'assistant', content: data.explanation });
+        }
+        if (data.sql) {
+          conversationHistory.push({ role: 'assistant', content: `SQL: ${data.sql}` });
+        }
         renderResult(data);
       } catch (err) {
         thinking.remove();

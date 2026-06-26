@@ -12,6 +12,7 @@ class ColumnMeta(BaseModel):
     business_name: Optional[str] = None
     foreign_key: Optional[str] = None
     example_values: Optional[str] = None
+    tags: List[str] = Field(default_factory=list)  # Tag FQNs (e.g., "UnidadesMedida.Millones_EUR")
 
 
 class TableContext(BaseModel):

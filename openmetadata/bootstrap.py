@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import asyncpg
 import base64
 import logging
 import os
@@ -145,9 +146,60 @@ async def trigger_ingestion(
             logger.info("Ingestion pipeline triggered successfully")
 
 
+async def ensure_airflow_db() -> None:
+    """Create Airflow database and user if they don't exist."""
+    airflow_user = os.getenv("AIRFLOW_DB_USER", "airflow_user")
+    airflow_pass = os.getenv("AIRFLOW_DB_PASSWORD", "airflow_pass")
+    airflow_db = os.getenv("AIRFLOW_DB", "airflow_db")
+    
+    # Connect as postgres superuser
+    postgres_dsn = str(settings.postgres_dsn).replace("+psycopg2", "")
+    # Replace database name with 'postgres' to connect to default DB
+    postgres_dsn = postgres_dsn.rsplit("/", 1)[0] + "/postgres"
+    # Replace user with postgres
+    postgres_dsn = postgres_dsn.replace("artoo_demo:artoo_demo", "postgres:openmetadata_default")
+    
+    try:
+        conn = await asyncpg.connect(postgres_dsn)
+        
+        # Check if user exists
+        user_exists = await conn.fetchval(
+            "SELECT 1 FROM pg_roles WHERE rolname = $1", airflow_user
+        )
+        
+        if not user_exists:
+            logger.info(f"Creating Airflow user: {airflow_user}")
+            await conn.execute(
+                f"CREATE ROLE {airflow_user} LOGIN PASSWORD '{airflow_pass}'"
+            )
+        
+        # Check if database exists
+        db_exists = await conn.fetchval(
+            "SELECT 1 FROM pg_database WHERE datname = $1", airflow_db
+        )
+        
+        if not db_exists:
+            logger.info(f"Creating Airflow database: {airflow_db}")
+            await conn.execute(
+                f"CREATE DATABASE {airflow_db} OWNER {airflow_user}"
+            )
+            await conn.execute(
+                f"GRANT ALL PRIVILEGES ON DATABASE {airflow_db} TO {airflow_user}"
+            )
+        
+        await conn.close()
+        logger.info("Airflow database setup complete")
+    except Exception as e:
+        logger.warning(f"Could not ensure Airflow DB (may already exist): {e}")
+
+
 async def main() -> None:
     configure_logging()
     om_url = str(settings.openmetadata_url).rstrip("/")
+    
+    # Ensure Airflow DB exists (idempotent)
+    await ensure_airflow_db()
+    
     await wait_for_health(om_url)
     token = await get_jwt_token(om_url)
     async with httpx.AsyncClient(timeout=30) as client:
