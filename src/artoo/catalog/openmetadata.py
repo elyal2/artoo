@@ -357,15 +357,16 @@ class OpenMetadataClient:
             )
             return
 
-        custom_properties.append(
+        # OpenMetadata adds a custom property via PUT /metadata/types/{id} with a CustomProperty
+        # body (PUT on /types/name/{name} is 405).
+        put_resp = await self._put(
+            f"{self.base_url}/api/v1/metadata/types/{payload['id']}",
             {
                 "name": prop_name,
                 "description": prop_description,
                 "propertyType": {"id": type_id, "type": "type"},
-            }
+            },
         )
-        payload["customProperties"] = custom_properties
-        put_resp = await self._put(url, payload)
         put_resp.raise_for_status()
 
     async def ensure_governance_taxonomy(self) -> None:

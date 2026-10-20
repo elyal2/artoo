@@ -167,6 +167,7 @@ class CatalogWriter:
         self.profile = profile if profile is not None else load_profile()
         # Tracks glossary terms created across all tables in this run to avoid redundant PUTs
         self._seen_glossary_terms: set[str] = set()
+        self._seen_business_tags: set[str] = set()
 
     async def write(self, table_fqn: str, enrichment: TableEnrichment) -> None:
         # Post-process: add unit documentation to column descriptions
@@ -331,6 +332,12 @@ class CatalogWriter:
             table_tags.append(tier_tag)
         if table_tags:
             try:
+                for tag in enrichment.suggested_tags:
+                    if tag not in self._seen_business_tags:
+                        await self.om.ensure_tag(
+                            "Business", tag, "Business domain tag inferred by the ARTOO enricher."
+                        )
+                        self._seen_business_tags.add(tag)
                 await self.om.put_table_tags(table_fqn, table_tags)
                 logger.info("Applied %d table tags to %s", len(table_tags), table_fqn)
             except Exception as exc:

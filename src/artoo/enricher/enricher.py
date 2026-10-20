@@ -82,7 +82,10 @@ class SemanticEnricher:
             {"model": settings.enrichment_llm_model} if settings.enrichment_llm_model else {}
         )
         response_text = await self.llm.complete(
-            system=ENRICHMENT_SYSTEM_PROMPT, user=prompt, **model_kwargs
+            system=ENRICHMENT_SYSTEM_PROMPT,
+            user=prompt,
+            max_tokens=settings.enrichment_max_tokens,
+            **model_kwargs,
         )
         clean = _strip_markdown(response_text)
         try:

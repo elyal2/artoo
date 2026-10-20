@@ -23,7 +23,7 @@
 - `make seed DEMO_PROFILE=ecommerce` — `DEMO_PROFILE` also read from `.env.local` if set.
 - `make bootstrap` polls OM health up to 30 × 5 s; OM takes 3–5 min on first boot.
 - `make crawl` bypasses Airflow (incompatible plugin); runs `metadata ingest` directly inside `openmetadata_ingestion` via `docker exec`.
-- `make down` may need `sudo rm -rf docker-volume/db-data-postgres` on permission failure.
+- Postgres data lives in the named volume `pg-data` (bind mount fails on Docker Desktop/macOS); `make down` removes it.
 - `artoo-enricher` has `profiles: [tools]` in Compose — not started by plain `docker compose up`; use `docker compose run --rm artoo-enricher` or `make enrich`.
 
 ## Testing Quirks
@@ -73,6 +73,6 @@ Two-step, idempotent:
 
 ## Docker / Postgres Init
 - Multi-stage `Dockerfile`: named targets `enricher` and `api`.
-- Base Postgres image already creates OM db/user (`postgres-script.sql`); demo `init.sh` must **only** add demo-specific roles/tables — never recreate `openmetadata_user` or `openmetadata_db`.
+- `postgres/01-om-init.sh` (mounted as `01-om-init.sh`) creates the OM and Airflow roles/DBs; demo `init.sh` must **only** add demo-specific roles/tables — never recreate `openmetadata_user` or `openmetadata_db`.
 - `demos/ecommerce/seed.py` must stay in sync with `demos/ecommerce/init.sh`.
 - OpenMetadata 1.5.8 API: use `?fields=columns,tableConstraints,usageSummary,tags` (removed `domains` field from 1.2.4, changed to singular `domain` but not used).

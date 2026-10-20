@@ -1,3 +1,5 @@
+import pytest
+
 from artoo.config import LLMProvider
 from artoo.llm.client import LLMClient
 
@@ -75,3 +77,38 @@ def test_claude5_models_omit_temperature() -> None:
         c._bedrock_anthropic_body("s", "u", 10, "eu.anthropic.claude-sonnet-4-x")["temperature"]
         == 0.2
     )
+
+
+@pytest.mark.asyncio
+async def test_bedrock_anthropic_skips_non_text_blocks(monkeypatch) -> None:  # noqa: ANN001
+    import io
+    import json as _json
+
+    from artoo.config import LLMProvider
+    from artoo.llm import client as mod
+
+    payload = {
+        "content": [
+            {"type": "thinking", "thinking": "..."},
+            {"type": "text", "text": "hello "},
+            {"type": "text", "text": "world"},
+        ],
+        "usage": {"input_tokens": 3, "output_tokens": 4},
+    }
+
+    class FakeBedrock:
+        def invoke_model(self, **kw):  # noqa: ANN003, ANN201
+            return {"body": io.BytesIO(_json.dumps(payload).encode())}
+
+    class FakeSession:
+        def __init__(self, **kw) -> None:  # noqa: ANN003
+            pass
+
+        def client(self, *a, **kw):  # noqa: ANN002, ANN003, ANN201
+            return FakeBedrock()
+
+    monkeypatch.setattr(mod.boto3, "Session", FakeSession)
+    c = mod.LLMClient(
+        LLMProvider.BEDROCK, "eu.anthropic.claude-sonnet-5-5", None, 100, 0.2, None, "eu-south-2"
+    )
+    assert await c.complete(system=None, user="hi") == "hello world"

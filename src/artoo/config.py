@@ -42,6 +42,10 @@ class Settings(BaseSettings):
         default=None,
         description="LLM model for the enricher (defaults to llm_model). Can be a cheaper model.",
     )
+    enrichment_max_tokens: int = Field(
+        default=8192,
+        description="Max tokens for enricher LLM responses (wide tables need long JSON).",
+    )
     llm_chart_max_tokens: int = Field(
         default=4096,
         description="Max tokens for chart LLM responses (needs more for D3 code generation).",

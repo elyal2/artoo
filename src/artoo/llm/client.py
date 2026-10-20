@@ -141,7 +141,12 @@ class LLMClient:
                 usage.get("output_tokens", usage.get("outputTokens")),
             )
             if self._is_anthropic_model(model):
-                return str(payload.get("content", [{}])[0].get("text", ""))
+                # Claude 5.x may return non-text blocks (e.g. thinking) before the text block
+                return "".join(
+                    str(b.get("text", ""))
+                    for b in payload.get("content", [])
+                    if b.get("type", "text") == "text"
+                )
             return str(
                 payload.get("output", {}).get("message", {}).get("content", [{}])[0].get("text", "")
             )

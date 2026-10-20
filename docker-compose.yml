@@ -16,6 +16,7 @@
 name: artoo
 
 volumes:
+  pg-data:
   ingestion-volume-dag-airflow:
   ingestion-volume-dags:
   ingestion-volume-tmp:
@@ -38,7 +39,9 @@ services:
     ports:
       - "5432:5432"
     volumes:
-      - ./docker-volume/db-data-postgres:/var/lib/postgresql/data
+      # named volume: bind mounts of PGDATA fail on Docker Desktop/macOS ("wrong ownership")
+      - pg-data:/var/lib/postgresql/data
+      - ./postgres/01-om-init.sh:/docker-entrypoint-initdb.d/01-om-init.sh:ro
       - ./demos/${DEMO_PROFILE:-hotel}/init.sh:/docker-entrypoint-initdb.d/02-init.sh
     networks:
       - app_net
