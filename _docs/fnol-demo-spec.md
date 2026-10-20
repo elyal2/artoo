@@ -1,6 +1,6 @@
 # Demo FNOL (seguros) + independencia de dominio — Especificación v0.1
 
-Estado: borrador para revisión. Alcance: nuevo perfil `demos/insurance`, desacople del código respecto a dominios concretos, subida de LLMs a Sonnet 5.5, Terraform y redespliegue completo en Docker.
+Estado: borrador para revisión. Alcance: nuevo perfil `demos/insurance`, desacople del código respecto a dominios concretos, subida de LLMs a Sonnet 5.5 y redespliegue completo en Docker. **Terraform queda fuera de esta versión (v2).**
 
 ## 1. ¿Tiene sentido?
 
@@ -56,12 +56,14 @@ Resultado esperado: añadir un dominio = crear `demos/<perfil>/{init.sh,seed.py,
 
 ## 4. LLMs → Sonnet 5.5
 
-- IDs: API directa `claude-sonnet-5-5`; Bedrock EU `eu.anthropic.claude-sonnet-5-5-…` (**verificar el ID exacto de inference profile y la disponibilidad en la región antes de fijarlo**).
+- IDs: API directa `claude-sonnet-5-5`; Bedrock en `eu-south-2` (región actual): `eu.anthropic.claude-sonnet-5-5` — **verificado** con `list-inference-profiles` (también existe `global.anthropic.claude-sonnet-5-5`). Haiku 5.5 disponible como `eu.anthropic.claude-haiku-5-5` para intent/enricher.
 - Mantener un modelo configurable por tarea (intent, SQL, explicación, chart, enricher) vía env; el valor por defecto de todos pasa a Sonnet 5.5, con posibilidad de bajar enricher/intent a un modelo más barato.
 - Registrar tokens in/out por petición (regla de coste) y comparar latencia/coste frente a Nova Lite en la demo.
 - Revisar `max_tokens`/temperatura y el parseo JSON con las respuestas de Sonnet 5.5; actualizar `.env.example`, `AGENTS.md` y tests de `llm/client`.
 
-## 5. Terraform
+## 5. Terraform — DIFERIDO A V2
+
+Decisión: no se aborda ahora para centrar el esfuerzo en la independencia de dominio. Lo siguiente se conserva como propuesta para v2 (issues #6 y #7 cerradas como diferidas).
 
 Reglas globales: infra en `terraform/` (`modules/`, `environments/`), nunca `apply` sin `plan` revisado, LocalStack para AWS local, target `make plan`/`make apply`.
 
@@ -82,12 +84,12 @@ Flujo: `make down` (scoped al proyecto, nunca `prune` global) → `make demo-ful
 1. Independencia de dominio (bloquea todo lo demás).
 2. Sonnet 5.5 (paralelo a 1 salvo prompts).
 3. Perfil `insurance` (depende de 1).
-4. Terraform (paralelo a 3).
-5. Redespliegue y validación (depende de 1–4).
+4. Redespliegue y validación (depende de 1–3).
+5. (v2) Terraform.
 
 ## 8. Riesgos
 
-- ID/disponibilidad de Sonnet 5.5 en Bedrock EU → verificar primero; fallback API directa Anthropic.
+- Sonnet 5.5 en Bedrock EU: disponible (`eu.anthropic.claude-sonnet-5-5`); el ID no lleva fecha ni sufijo de versión, a diferencia de los 4.x.
 - Coste/latencia de Sonnet 5.5 en enrichment masivo → modelo por tarea.
 - OpenMetadata 1.5.8 tarda 3–5 min en arrancar → no afecta al diseño, sí a los tiempos de validación.
 - Calidad del SQL con esquema más grande (8 tablas, FKs compuestas) → suite de regresión de preguntas.
