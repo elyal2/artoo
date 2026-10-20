@@ -5,8 +5,9 @@ import logging
 import re
 from datetime import date, datetime
 from decimal import Decimal
+from typing import Any
 
-import asyncpg
+import asyncpg  # type: ignore[import-untyped]
 import sqlglot
 import sqlglot.expressions as exp
 
@@ -14,7 +15,12 @@ from ..catalog.conversion_rules import generate_conversion_rules
 from ..catalog.openmetadata import OpenMetadataClient
 from ..config import settings
 from ..llm.client import LLMClient
-from ..llm.prompts import CHART_SYSTEM_PROMPT, EXPLANATION_SYSTEM_PROMPT, INTENT_SYSTEM_PROMPT, QUERY_SYSTEM_PROMPT
+from ..llm.prompts import (
+    CHART_SYSTEM_PROMPT,
+    EXPLANATION_SYSTEM_PROMPT,
+    INTENT_SYSTEM_PROMPT,
+    QUERY_SYSTEM_PROMPT,
+)
 from ..models import (
     ChartSpec,
     ConversationMessage,
@@ -29,9 +35,9 @@ from .validator import validate_sql
 logger = logging.getLogger(__name__)
 
 
-def _serialize_row(row: dict) -> dict:
+def _serialize_row(row: dict[str, Any]) -> dict[str, Any]:
     """Convert non-JSON-serializable types from asyncpg results."""
-    result = {}
+    result: dict[str, Any] = {}
     for k, v in row.items():
         if isinstance(v, Decimal):
             result[k] = float(v)
@@ -40,6 +46,37 @@ def _serialize_row(row: dict) -> dict:
         else:
             result[k] = v
     return result
+
+
+_RETRY_HINTS: tuple[tuple[str, str], ...] = (
+    (
+        "must appear in the GROUP BY",
+        "Every non-aggregated column in SELECT/ORDER BY must be in GROUP BY, or wrapped in an "
+        "aggregate (SUM, AVG, MAX...). For ratios between aggregates, compute each aggregate "
+        "in a CTE or subquery first, then combine them in the outer SELECT.",
+    ),
+    (
+        "aggregate functions are not allowed in WHERE",
+        "Move aggregate conditions from WHERE to HAVING, or filter in an outer query.",
+    ),
+    (
+        "ambiguous",
+        "Qualify every column with its table alias.",
+    ),
+    (
+        "division by zero",
+        "Guard divisors with NULLIF(divisor, 0).",
+    ),
+)
+
+
+def _retry_hint(error: str) -> str:
+    """Return a generic corrective hint for common PostgreSQL errors (domain-agnostic)."""
+    lowered = error.lower()
+    for needle, hint in _RETRY_HINTS:
+        if needle.lower() in lowered:
+            return hint
+    return ""
 
 
 def _strip_markdown(text: str) -> str:
@@ -153,9 +190,9 @@ class QueryPipeline:
             if numeric_cols:
                 lines.append(f"NUMERIC COLUMNS: {', '.join(numeric_cols)}")
             parts.append("\n".join(lines))
-        
+
         schema = "\n\n".join(parts)
-        
+
         # Append unit conversion rules if any columns have UnidadesMedida tags
         conversion_rules = generate_conversion_rules(tables)
         if conversion_rules:
@@ -166,7 +203,7 @@ class QueryPipeline:
             logger.info("Conversion rules preview (first 10 lines): %s", "\n".join(lines[:10]))
         else:
             logger.warning("No unit conversion rules generated (no UnidadesMedida tags found)")
-        
+
         return schema
 
     @staticmethod
@@ -303,25 +340,33 @@ class QueryPipeline:
                     )
 
     async def _generate_sql_with_retry(
-        self, base_user_msg: str, tables: list[TableDetail], max_retries: int = 1
+        self, base_user_msg: str, tables: list[TableDetail], max_retries: int = 2
     ) -> tuple[SQLResponse, str]:
-        """Generate SQL, validate it, and retry once with the error as feedback."""
+        """Generate SQL, validate it, and retry with the error as feedback."""
         user_msg = base_user_msg
         last_error: str | None = None
+        last_sql: str | None = None
 
         for attempt in range(max_retries + 1):
             if attempt > 0 and last_error:
+                hint = _retry_hint(last_error)
                 user_msg = (
                     f"{base_user_msg}\n\n"
-                    f"Your previous attempt produced invalid SQL. Error: {last_error}\n"
-                    f"Fix the SQL addressing the error above. Check the schema carefully: "
-                    f"every column and every join path must exist in the COLUMNS and RELATIONSHIPS sections."
+                    + (f"Your previous SQL was:\n{last_sql}\n" if last_sql else "")
+                    + f"Your previous attempt produced invalid SQL. Error: {last_error}\n"
+                    + (f"Hint: {hint}\n" if hint else "")
+                    + "Fix the SQL addressing the error above. Check the schema carefully: "
+                    "every column and every join path must exist in the COLUMNS and "
+                    "RELATIONSHIPS sections."
                 )
-                logger.info("Retrying SQL generation after error (attempt %d): %s", attempt + 1, last_error)
+                logger.info(
+                    "Retrying SQL generation after error (attempt %d): %s", attempt + 1, last_error
+                )
 
             raw = await self.llm.complete(system=QUERY_SYSTEM_PROMPT, user=user_msg)
             parsed = _extract_sql_response(raw)
             sql = validate_sql(parsed.sql)
+            last_sql = sql
             logger.info(
                 "Generated SQL (attempt %d)",
                 attempt + 1,
@@ -372,7 +417,10 @@ class QueryPipeline:
             intent = IntentResponse(intent="data_query")
 
         if intent.intent == "conversational":
-            reply = intent.reply or "I can query your data catalog and answer questions about the data. Try asking something like 'show top revenue by hotel' or 'how many bookings last month'."
+            reply = (
+                intent.reply
+                or "I can query your data catalog and answer questions about the data. Try asking something like 'show top revenue by hotel' or 'how many bookings last month'."
+            )
             return QueryResponse(question=question, explanation=reply, confidence="high")
 
         # ── data query path ───────────────────────────────────────────────────
@@ -391,7 +439,9 @@ class QueryPipeline:
                     sql_context += f"Previous SQL: {msg.content}\n"
             sql_context += "\n"
 
-        base_user_msg = f"Conversation history:\n{sql_context}New question: {question}\nSchema:\n{context}"
+        base_user_msg = (
+            f"Conversation history:\n{sql_context}New question: {question}\nSchema:\n{context}"
+        )
         parsed, sql = await self._generate_sql_with_retry(base_user_msg, tables)
 
         pool = await self._ensure_pool()
@@ -402,20 +452,19 @@ class QueryPipeline:
 
         # Build explanation context with full statistics
         sample_for_llm = rows_dict[:5]
-        stats_context: dict = {
+        stats_context: dict[str, Any] = {
             "question": question,
             "sql": sql,
             "sample": sample_for_llm,
             "total_rows": len(rows_dict),
         }
-        
+
         # Add numeric column ranges if present
         if rows_dict:
-            numeric_summary: dict[str, dict] = {}
+            numeric_summary: dict[str, dict[str, Any]] = {}
             for col in rows_dict[0].keys():
                 values = [
-                    r[col] for r in rows_dict 
-                    if col in r and isinstance(r[col], (int, float))
+                    r[col] for r in rows_dict if col in r and isinstance(r[col], (int, float))
                 ]
                 if values:
                     numeric_summary[col] = {
@@ -447,7 +496,7 @@ class QueryPipeline:
         )
 
     async def _recommend_chart(
-        self, question: str, sql: str, rows: list[dict], column_labels: dict[str, str]
+        self, question: str, sql: str, rows: list[dict[str, Any]], column_labels: dict[str, str]
     ) -> ChartSpec | None:
         if not rows or len(rows) < 2:
             logger.debug("Chart skipped: fewer than 2 rows")
@@ -488,7 +537,9 @@ class QueryPipeline:
             logger.warning("Chart generation failed: %s", exc, exc_info=True)
             return None
 
-    def _build_column_labels(self, tables: list[TableDetail], rows: list[dict]) -> dict[str, str]:
+    def _build_column_labels(
+        self, tables: list[TableDetail], rows: list[dict[str, Any]]
+    ) -> dict[str, str]:
         if not rows:
             return {}
         col_names = list(rows[0].keys())

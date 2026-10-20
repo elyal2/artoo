@@ -4,9 +4,9 @@ import asyncio
 import json
 import logging
 from dataclasses import dataclass
-from typing import Optional
+from typing import Any, Optional
 
-import boto3
+import boto3  # type: ignore[import-untyped]
 from anthropic import AsyncAnthropic
 from openai import AsyncOpenAI
 
@@ -74,7 +74,7 @@ class LLMClient:
             temperature=self.temperature,
             messages=[{"role": "user", "content": user}],
         )
-        return response.content[0].text  # type: ignore[index]
+        return "".join(b.text for b in response.content if b.type == "text")
 
     async def _openai_complete(
         self, system: Optional[str], user: str, model: str, max_tokens: int
@@ -116,16 +116,18 @@ class LLMClient:
             )
             payload = json.loads(response["body"].read())
             if self._is_anthropic_model(model):
-                return payload.get("content", [{}])[0].get("text", "")
-            return (
+                return str(payload.get("content", [{}])[0].get("text", ""))
+            return str(
                 payload.get("output", {}).get("message", {}).get("content", [{}])[0].get("text", "")
             )
 
         return await asyncio.to_thread(_invoke)
 
-    def _bedrock_anthropic_body(self, system: Optional[str], user: str, max_tokens: int) -> dict:
+    def _bedrock_anthropic_body(
+        self, system: Optional[str], user: str, max_tokens: int
+    ) -> dict[str, Any]:
         messages = [{"role": "user", "content": user}]
-        body: dict = {
+        body: dict[str, Any] = {
             "anthropic_version": "bedrock-2023-05-31",
             "max_tokens": max_tokens,
             "temperature": self.temperature,
@@ -135,8 +137,10 @@ class LLMClient:
             body["system"] = system
         return body
 
-    def _bedrock_nova_body(self, system: Optional[str], user: str, max_tokens: int) -> dict:
-        body: dict = {
+    def _bedrock_nova_body(
+        self, system: Optional[str], user: str, max_tokens: int
+    ) -> dict[str, Any]:
+        body: dict[str, Any] = {
             "messages": [
                 {"role": "user", "content": [{"text": user}]},
             ],

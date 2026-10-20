@@ -1,15 +1,17 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import Any, cast
 
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
-from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 
 from ..catalog.openmetadata import OpenMetadataClient, get_default_client
 from ..logging import configure_logging
@@ -25,7 +27,7 @@ class QueryRequest(BaseModel):
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     configure_logging()
     catalog = await get_default_client()
     pipeline = QueryPipeline(catalog)
@@ -49,7 +51,7 @@ app.add_middleware(
 class NoCacheStaticMiddleware(BaseHTTPMiddleware):
     """Add no-cache headers to all static file responses."""
 
-    async def dispatch(self, request: Request, call_next) -> Response:
+    async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
         response = await call_next(request)
         if not request.url.path.startswith("/api") and not request.url.path.startswith("/mcp"):
             response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
@@ -62,13 +64,11 @@ app.add_middleware(NoCacheStaticMiddleware)
 
 
 async def get_pipeline() -> QueryPipeline:
-    pipeline: QueryPipeline = app.state.pipeline
-    return pipeline
+    return cast(QueryPipeline, app.state.pipeline)
 
 
 async def get_catalog() -> OpenMetadataClient:
-    catalog: OpenMetadataClient = app.state.catalog
-    return catalog
+    return cast(OpenMetadataClient, app.state.catalog)
 
 
 @app.post("/api/query", response_model=QueryResponse)
@@ -100,34 +100,34 @@ async def health() -> dict[str, str]:
 
 
 def _get_pipeline_from_state() -> QueryPipeline:
-    return app.state.pipeline
+    return cast(QueryPipeline, app.state.pipeline)
 
 
 def _get_catalog_from_state() -> OpenMetadataClient:
-    return app.state.catalog
+    return cast(OpenMetadataClient, app.state.catalog)
 
 
-def create_mcp_app():
+def create_mcp_app() -> Any:
     from fastmcp import FastMCP
 
     mcp = FastMCP("artoo")
 
     @mcp.tool()
-    async def query_data(question: str) -> dict:
+    async def query_data(question: str) -> dict[str, Any]:
         """Ask a question about the data in natural language."""
         pipeline = _get_pipeline_from_state()
         result = await pipeline.query(question)
         return result.model_dump()
 
     @mcp.tool()
-    async def list_tables() -> list[dict]:
+    async def list_tables() -> list[dict[str, Any]]:
         """List tables from the semantic catalog."""
         catalog = _get_catalog_from_state()
         tables = await catalog.list_tables()
         return [t.model_dump() for t in tables]
 
     @mcp.tool()
-    async def describe_table(table_name: str) -> dict:
+    async def describe_table(table_name: str) -> dict[str, Any]:
         """Get details for a table."""
         catalog = _get_catalog_from_state()
         result = await catalog.get_table(table_name)

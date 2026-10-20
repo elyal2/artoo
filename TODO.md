@@ -2,7 +2,7 @@
 
 ## 🔴 Crítico
 
-- [ ] **Resolver error SQL en query compleja**: "¿Qué porcentaje del PIB depende del turismo?" falla con `column "i.pib_millones_eur" must appear in the GROUP BY clause`. El LLM genera SQL inválido con GROUP BY incorrecto.
+- [x] **Resolver error SQL en query compleja** (mitigado: regla de agregación en prompt + reintento con SQL previo, hint y 2 reintentos; verificar manualmente con LLM real): "¿Qué porcentaje del PIB depende del turismo?" falla con `column "i.pib_millones_eur" must appear in the GROUP BY clause`. El LLM genera SQL inválido con GROUP BY incorrecto.
 - [ ] **Validar conversion rules en prompts**: Verificar que las conversion rules generadas por `generate_conversion_rules()` están siendo usadas efectivamente por el LLM en queries que comparan diferentes unidades.
 
 ## 🟡 Importante
@@ -21,6 +21,14 @@
 - [ ] **Documentar patrones de unit detection**: Crear tabla en README con todos los 83 patrones regex y ejemplos de nombres de columnas que matchean.
 - [ ] **Chart fallbacks**: Implementar fallback a tabla si chart generation falla (actualmente falla silenciosamente).
 - [ ] **Mejorar UX del chat**: Agregar indicador de "pensando..." mientras el LLM genera SQL/explicación.
+
+- [ ] **Verificar fix GROUP BY con LLM real**: ejecutar "¿Qué porcentaje del PIB depende del turismo?" en demo andorra y añadir a suite de regresión.
+- [ ] **Subir cobertura** (45% hoy): `enricher/writer.py` 16%, `logging.py` 0%, `llm/client.py` 55%.
+- [ ] **Terraform / CI plan**: no aplica a demo local; reevaluar al desplegar en cloud.
+
+## 🚀 Fase 1 PRD v2
+
+- [ ] Iniciar Fase 1 de `_docs/artoo-v2-spec.md` (Ossie, adaptadores de fuente, orquestador). Derivar ADRs (`prd-to-adr`) y issues (`spec-to-issues`).
 
 ## 🔵 Exploración Futura
 
@@ -44,7 +52,7 @@
 
 ## 🐛 Bugs Conocidos
 
-- [ ] **Makefile `make test` no ejecuta tests**: Pasa `-m unit` pero ningún test tiene ese marker. Debería ejecutar todos los tests por defecto.
+- [x] **Makefile `make test` no ejecuta tests**: Pasa `-m unit` pero ningún test tiene ese marker. Debería ejecutar todos los tests por defecto.
 - [ ] **OpenMetadata login bloqueado**: Después de 3 intentos fallidos, cuenta bloqueada por ~5 min. Documentar workaround.
 - [ ] **Airflow 3.x incompatible**: Plugin de OpenMetadata no funciona con Airflow 3.x. Actualmente bypassed con CLI.
 

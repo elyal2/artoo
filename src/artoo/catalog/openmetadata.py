@@ -118,14 +118,15 @@ class OpenMetadataClient:
         resp = await self._get(url)
         resp.raise_for_status()
         raw = resp.json()
-        
+
         # Debug logging
         import logging
+
         logger = logging.getLogger(__name__)
-        if 'indicadores_economicos' in fqn:
+        if "indicadores_economicos" in fqn:
             for col in raw.get("columns", []):
-                if 'pib' in col['name']:
-                    logger.info("DEBUG: Column %s tags: %s", col['name'], col.get('tags', []))
+                if "pib" in col["name"]:
+                    logger.info("DEBUG: Column %s tags: %s", col["name"], col.get("tags", []))
 
         # Build per-column example values from sampleData if available.
         # sampleData.columns is a list of column names; sampleData.rows is a list of value lists.
@@ -158,11 +159,11 @@ class OpenMetadataClient:
             )
             for c in raw.get("columns", [])
         ]
-        
+
         # domains is a list in 1.12.x — take the first entry's name
         domains: list[Any] = raw.get("domains") or []
         business_domain = self._domain_name(domains[0]) if domains else None
-        
+
         return TableDetail(
             name=raw.get("fullyQualifiedName", raw.get("name")),
             description=raw.get("description"),
@@ -223,7 +224,7 @@ class OpenMetadataClient:
                 exc,
             )
             return []
-        
+
         hits = resp.json().get("hits", {}).get("hits", [])
         results: list[TableDetail] = []
         for hit in hits:
@@ -483,21 +484,41 @@ class OpenMetadataClient:
             )
         except Exception as exc:
             logger.warning("Taxonomy bootstrap step failed (UnidadesMedida glossary): %s", exc)
-        
+
         # Create standard unit terms
         unit_terms = {
-            "Millones_EUR": ("Millones de Euros", "1 unidad = 1.000.000€. Para convertir a euros base: dividir por 1.000.000. Columnas: *_millones_eur, *_mill, *_meur"),
-            "Miles_EUR": ("Miles de Euros", "1 unidad = 1.000€. Para convertir a euros base: dividir por 1.000. Columnas: *_miles_eur, *_k"),
-            "Euros": ("Euros (unidad base)", "1 unidad = 1€. Sin conversión necesaria. Columnas: *_eur, *precio*, *gasto*, *cost*"),
-            "Porcentaje_0_100": ("Porcentaje (0-100)", "Valor porcentual en escala 0-100. Para convertir a ratio decimal: dividir por 100. Columnas: *_pct, *_percent"),
-            "Ratio_Decimal": ("Ratio (0.0-1.0)", "Ratio decimal entre 0.0 y 1.0. Para convertir a porcentaje: multiplicar por 100. Columnas: *_ratio"),
+            "Millones_EUR": (
+                "Millones de Euros",
+                "1 unidad = 1.000.000€. Para convertir a euros base: dividir por 1.000.000. Columnas: *_millones_eur, *_mill, *_meur",
+            ),
+            "Miles_EUR": (
+                "Miles de Euros",
+                "1 unidad = 1.000€. Para convertir a euros base: dividir por 1.000. Columnas: *_miles_eur, *_k",
+            ),
+            "Euros": (
+                "Euros (unidad base)",
+                "1 unidad = 1€. Sin conversión necesaria. Columnas: *_eur, *precio*, *gasto*, *cost*",
+            ),
+            "Porcentaje_0_100": (
+                "Porcentaje (0-100)",
+                "Valor porcentual en escala 0-100. Para convertir a ratio decimal: dividir por 100. Columnas: *_pct, *_percent",
+            ),
+            "Ratio_Decimal": (
+                "Ratio (0.0-1.0)",
+                "Ratio decimal entre 0.0 y 1.0. Para convertir a porcentaje: multiplicar por 100. Columnas: *_ratio",
+            ),
             "Dias": ("Días", "Duración en días. 1 unidad = 24 horas. Columnas: *_days, *_d"),
-            "Unidades_Fisicas": ("Unidades Físicas", "Cantidad de items (no monetarias). Columnas: *_qty, *_count, numero_*"),
+            "Unidades_Fisicas": (
+                "Unidades Físicas",
+                "Cantidad de items (no monetarias). Columnas: *_qty, *_count, numero_*",
+            ),
         }
-        
+
         for term_name, (display_name, description) in unit_terms.items():
             try:
-                await self.ensure_glossary_term("UnidadesMedida", term_name, display_name, description)
+                await self.ensure_glossary_term(
+                    "UnidadesMedida", term_name, display_name, description
+                )
             except Exception as exc:
                 logger.warning("Failed to create unit term %s: %s", term_name, exc)
 

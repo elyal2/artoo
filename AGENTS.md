@@ -7,14 +7,14 @@
 - `src/artoo/config.py` — single `Settings` (pydantic-settings, `extra="ignore"`) instantiated at module level as `settings`. Loaded at import time — cannot be patched after import without reloading.
 - `openmetadata/` — bootstrap/crawl helper scripts consumed by the Makefile only; not importable app code.
 - `demos/<profile>/` — each profile has `init.sh` (Postgres init, mounted as `02-init.sh`) and `seed.py` run inside the container. Available profiles: `hotel` (default), `ecommerce`, `andorra`.
-- `tests/` — 46 pure unit tests; no Docker or network required.
+- `tests/` — 55 pure unit tests; no Docker or network required.
 
 ## Commands
 - **Always `uv`, never `pip`.**
-- Run tests: `uv run python -m pytest` — `uv run pytest` fails (pytest is not a direct script).
-- Run tests with coverage: `uv run python -m pytest --cov=src/artoo`
-- Lint + typecheck: `make lint` → `ruff check . --fix && ruff format . && mypy src/`
-- **`make test` runs zero tests** — passes `-m unit` but no test uses `@pytest.mark.unit`. Use `uv run python -m pytest` directly.
+- Dev tools live in the `dev` extra: always pass `--all-extras` (`uv sync --all-extras`), otherwise `No module named pytest`.
+- Run tests (with coverage): `make test` = `uv run --all-extras python -m pytest --cov=src/artoo`.
+- Lint + typecheck: `make lint` (autofix) or `make lint-check` (CI, no writes) → ruff check/format + `mypy src/`.
+- CI: `.github/workflows/ci.yml` runs lint-check, mypy, pytest and gitleaks on every PR.
 
 ## Docker / Demo Commands
 - `make demo` = `restart` → `seed` → `bootstrap` → `crawl` → `api` (order matters, do not skip).
@@ -52,7 +52,7 @@
 ## Query Pipeline
 Intent routing in `pipeline.py`: every request is classified first (`conversational` | `data_query`). Conversational replies return `QueryResponse` with no `sql` field — the frontend checks `!data.sql` to render plain text.
 
-SQL path: schema context → LLM SQL generation → `sqlglot` AST column validation (fail-open for unqualified refs) → `EXPLAIN` dry-run → execute. One retry with error feedback on failure.
+SQL path: schema context → LLM SQL generation → `sqlglot` AST column validation (fail-open for unqualified refs) → `EXPLAIN` dry-run → execute. Up to 2 retries; feedback includes the failing SQL, the PG error and a generic hint (`_retry_hint`, e.g. GROUP BY).
 
 Keep all LLM prompts domain-agnostic — no hardcoded business rules. Rely entirely on schema context, column descriptions, and FK relationships from OpenMetadata.
 

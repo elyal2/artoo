@@ -1,4 +1,4 @@
-.PHONY: up down seed enrich api bootstrap crawl demo demo-full _demo-banner logs ps help test lint clean
+.PHONY: up down seed enrich api bootstrap crawl demo demo-full _demo-banner logs ps help test lint lint-check clean
 
 COMPOSE_FILES=-f docker-compose.yml
 
@@ -91,12 +91,17 @@ api:
 	docker compose $(COMPOSE_FILES) up -d artoo-api
 
 test:
-	uv run python -m pytest --cov=src/artoo
+	uv run --all-extras python -m pytest --cov=src/artoo
 
 lint:
-	uv run ruff check . --fix
-	uv run ruff format .
-	uv run mypy src/
+	uv run --all-extras ruff check . --fix
+	uv run --all-extras ruff format .
+	uv run --all-extras mypy src/
+
+lint-check:
+	uv run --all-extras ruff check .
+	uv run --all-extras ruff format --check .
+	uv run --all-extras mypy src/
 
 demo: clean up seed bootstrap crawl api
 	@$(MAKE) _demo-banner

@@ -20,3 +20,9 @@ docker-volume/
 backup_*.sql
 *.old
 *.tmp
+
+# local tooling
+.opencode/
+back.sh
+**/.DS_Store
+.coverage

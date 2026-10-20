@@ -62,7 +62,8 @@ Rules:
 7. Add LIMIT 100 unless the user asks for all results.
 8. Always SELECT individual columns — never use json_build_object, row_to_json, array_agg, or any JSON-wrapping function. Each value must be its own column.
 9. Always assign a short alias to every table (e.g. FROM bkng b, FROM prop p) and qualify EVERY column reference with its table alias (e.g. b.tot_amt, p.prop_name). Never reference a column without its table alias when more than one table is in scope.
-10. Return ONLY valid JSON with no prose before or after it:
+10. CRITICAL — AGGREGATION: Every non-aggregated column in SELECT, HAVING or ORDER BY must appear in GROUP BY. When computing a ratio or percentage between values from different tables or aggregates (e.g. a share of a total), aggregate each side separately in a CTE or subquery, then join and divide in the outer query. Guard divisors with NULLIF(x, 0).
+11. Return ONLY valid JSON with no prose before or after it:
    {"sql": "SELECT ...", "tables_used": ["table1"], "confidence": "high|medium|low", "reasoning": "list each table needed, the FK join path used (e.g. orders→order_items→products), and confirm every column exists in the listed table"}
 """
 

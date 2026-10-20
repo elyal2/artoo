@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import random
-from datetime import date
 
 import asyncpg
 
@@ -127,7 +126,7 @@ async def seed() -> None:
     # ── PRESUPUESTO ──────────────────────────────────────────────────────
     # Ingresos y gastos del gobierno por categoría
     presupuesto_rows = []
-    
+
     categorias_ingreso = [
         "Impuestos directos",
         "Impuestos indirectos",
@@ -135,7 +134,7 @@ async def seed() -> None:
         "Transferencias corrientes",
         "Ingresos patrimoniales",
     ]
-    
+
     categorias_gasto = [
         "Personal",
         "Inversión",
@@ -145,22 +144,22 @@ async def seed() -> None:
         "Educación",
         "Seguridad",
     ]
-    
+
     for anio in range(2019, 2025):
         # Ingresos
         base_ingreso = 600_000_000 * (1 + (anio - 2019) * 0.02)
         if anio == 2020:
             base_ingreso *= 0.85  # COVID impact
-        
+
         for categoria in categorias_ingreso:
             importe = base_ingreso * random.uniform(0.15, 0.25)
             presupuesto_rows.append((anio, "ingreso", categoria, "General", round(importe, 2)))
-        
+
         # Gastos
         base_gasto = 550_000_000 * (1 + (anio - 2019) * 0.02)
         if anio == 2020:
             base_gasto *= 0.88
-        
+
         for categoria in categorias_gasto:
             importe = base_gasto * random.uniform(0.10, 0.18)
             presupuesto_rows.append((anio, "gasto", categoria, "General", round(importe, 2)))

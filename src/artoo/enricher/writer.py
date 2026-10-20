@@ -28,7 +28,11 @@ _UNIT_PATTERNS = [
     # Basis points (finance)
     (r"_bps$", "basis points", "1 unit = 0.01%, 100 bps = 1%"),
     # Generic monetary (only if explicitly named) - ORDERED BY LENGTH (longest first)
-    (r"^(gross_|total_|unit_|net_)?(importe|amount|price|monto|cost)$", "monetary value", "Check schema for currency unit"),
+    (
+        r"^(gross_|total_|unit_|net_)?(importe|amount|price|monto|cost)$",
+        "monetary value",
+        "Check schema for currency unit",
+    ),
     (r"^(facturacion|ingresos|revenue)$", "monetary value", "Check schema for currency unit"),
     (r"^(nightly_rate|daily_rate|revpar|adr)$", "rate per unit", "Check schema for currency unit"),
     (r"_importe_eur$", "euros", "1 unit = 1€"),
@@ -41,14 +45,16 @@ _UNIT_PATTERNS = [
     (r"_euros?$", "euros", "1 unit = 1€"),
     (r"_(dollars?|usd)$", "US dollars", "1 unit = 1$"),  # dollars (7) > dollar (6) > usd (3)
     (r"_(pounds?|gbp)$", "British pounds", "1 unit = 1£"),  # pounds (6) > pound (5) > gbp (3)
-    
     # ── PERCENTAGES & RATIOS ────────────────────────────────────────────────
     (r"_pct$", "percentage", "1 unit = 1%, range 0-100, divide by 100 for decimal"),
     (r"_percent(age)?$", "percentage", "1 unit = 1%, range 0-100, divide by 100 for decimal"),
     (r"_tasa_pct$", "percentage rate", "1 unit = 1%, range 0-100, divide by 100 for decimal"),
-    (r"_ratio$", "ratio", "Decimal ratio (0.0-1.0), not percentage. Multiply by 100 for percentage."),
+    (
+        r"_ratio$",
+        "ratio",
+        "Decimal ratio (0.0-1.0), not percentage. Multiply by 100 for percentage.",
+    ),
     (r"_index$", "index value", "Decimal or normalized index. Check schema for scale."),
-    
     # ── TIME & DATES ────────────────────────────────────────────────────────
     (r"_days?$", "days", "1 unit = 1 day = 24 hours"),
     (r"_d\b$", "days", "1 unit = 1 day"),  # word boundary to avoid 'id', 'pid'
@@ -64,14 +70,12 @@ _UNIT_PATTERNS = [
     (r"_seconds?$", "seconds", "1 unit = 1 second"),
     (r"_sec$", "seconds", "1 unit = 1 second"),
     (r"_s\b$", "seconds", "1 unit = 1 second"),  # word boundary to avoid 'status'
-    
     # ── COUNTS & QUANTITIES ─────────────────────────────────────────────────
     (r"_qty$", "quantity", "Count of physical items or units (not monetary)"),
     (r"_quantity$", "quantity", "Count of physical items or units (not monetary)"),
     (r"_units?$", "units", "Count of discrete items (not monetary)"),
     (r"_count$", "count", "Integer count"),
     (r"_freq(uency)?$", "frequency", "Occurrence frequency. Check schema for time period."),
-    
     # ── HOSPITALITY METRICS ─────────────────────────────────────────────────
     (r"_rooms?$", "rooms", "Count of hotel rooms (inventory or occupied)"),
     (r"_keys?$", "rooms", "Count of hotel rooms (inventory)"),
@@ -80,7 +84,6 @@ _UNIT_PATTERNS = [
     (r"_pax$", "passengers/guests", "Count of people (from Latin 'pax')"),
     (r"_guests?$", "guests", "Count of guests/visitors"),
     (r"_huespedes?$", "guests", "Count of guests (Spanish)"),
-    
     # ── WEIGHTS & VOLUMES ───────────────────────────────────────────────────
     (r"_kilograms?$", "kilograms", "1 unit = 1 kg = 1,000 grams"),
     (r"_kg$", "kilograms", "1 unit = 1 kg = 1,000 grams"),
@@ -108,17 +111,17 @@ def _add_unit_documentation(col_name: str, description: str) -> str:
     """
     if not description:
         return description
-    
+
     # Check if description already contains conversion factor pattern
     if re.search(r"\(1 unit =", description, re.IGNORECASE):
         return description
-    
+
     # Try each pattern (in order of specificity)
     for pattern, unit_name, conversion in _UNIT_PATTERNS:
         if re.search(pattern, col_name, re.IGNORECASE):
             # Append conversion factor to description
             return f"{description.rstrip('.')}. Unit: {unit_name} ({conversion})."
-    
+
     return description
 
 
@@ -128,39 +131,39 @@ def _infer_unit_glossary_term(col_name: str) -> str | None:
     Returns the term name (e.g., "Millones_EUR") or None if no match.
     """
     col_lower = col_name.lower()
-    
+
     # Ordered by specificity (most specific first)
     # Match patterns: pib_millones_eur, revenue_millones, gdp_mill_eur, etc.
     if re.search(r"_(millones?|mill)(_eur|_usd)?$", col_lower):
         return "Millones_EUR"
     if re.search(r"_meur$", col_lower):
         return "Millones_EUR"
-    
+
     # Match patterns: budget_miles_eur, amount_k_eur, cost_keur
     if re.search(r"_(miles?|k)(_eur|_usd)?$", col_lower):
         return "Miles_EUR"
     if re.search(r"_keur$", col_lower):
         return "Miles_EUR"
-    
+
     # Match patterns: rate_pct, tasa_pct, percentage, percent
     if re.search(r"_(pct|percent(age)?|tasa_pct)$", col_lower):
         return "Porcentaje_0_100"
-    
+
     if re.search(r"_ratio$", col_lower):
         return "Ratio_Decimal"
-    
+
     # Match patterns: duration_days, stay_d
     if re.search(r"_days?$", col_lower):
         return "Dias"
     if re.search(r"_d$", col_lower):
         return "Dias"
-    
+
     # Match patterns: quantity, count, units, numero_*
     if re.search(r"_(qty|count|units?)$", col_lower):
         return "Unidades_Fisicas"
     if re.search(r"^numero_", col_lower):
         return "Unidades_Fisicas"
-    
+
     # Default: no unit term
     return None
 
@@ -176,7 +179,7 @@ class CatalogWriter:
         for col_name, col_info in enrichment.columns.items():
             if col_info.description:
                 col_info.description = _add_unit_documentation(col_name, col_info.description)
-        
+
         # Build a single patch with table description + displayName + all column patches
         ops: list[dict[str, object]] = [
             {"op": "add", "path": "/description", "value": enrichment.table_description},
@@ -201,7 +204,7 @@ class CatalogWriter:
         for col_name, col_info in enrichment.columns.items():
             if col_indices.get(col_name) is None:
                 continue
-            
+
             # Business term from LLM enrichment
             if col_info.business_name:
                 try:
@@ -216,11 +219,13 @@ class CatalogWriter:
                     logger.warning(
                         "Could not create glossary term for %s.%s: %s", table_fqn, col_name, exc
                     )
-            
+
             # Unit of measure term (auto-inferred from column name)
             unit_term = _infer_unit_glossary_term(col_name)
             if unit_term:
-                logger.info("Inferred unit term '%s' for column %s.%s", unit_term, table_fqn, col_name)
+                logger.info(
+                    "Inferred unit term '%s' for column %s.%s", unit_term, table_fqn, col_name
+                )
                 glossary_terms[f"{col_name}__unit"] = f"UnidadesMedida.{unit_term}"
             else:
                 logger.debug("No unit term inferred for column %s.%s", table_fqn, col_name)
@@ -290,12 +295,14 @@ class CatalogWriter:
                         "source": "Glossary",
                     }
                 )
-            
+
             # Add unit glossary term if present
             unit_key = f"{col_name}__unit"
             if unit_key in glossary_terms:
                 unit_tag_fqn = glossary_terms[unit_key]
-                logger.info("Adding unit tag '%s' to column %s.%s", unit_tag_fqn, table_fqn, col_name)
+                logger.info(
+                    "Adding unit tag '%s' to column %s.%s", unit_tag_fqn, table_fqn, col_name
+                )
                 col_tags.append(
                     {
                         "tagFQN": unit_tag_fqn,

@@ -96,9 +96,7 @@ async def test_pipeline_executes_query(monkeypatch):
     )
     catalog = FakeCatalog(table)
     fake_llm = FakeLLM()
-    pipeline = QueryPipeline(
-        catalog, llm=fake_llm, intent_llm=fake_llm, explanation_llm=fake_llm
-    )
+    pipeline = QueryPipeline(catalog, llm=fake_llm, intent_llm=fake_llm, explanation_llm=fake_llm)
 
     fake_pool = FakePool()
     monkeypatch.setattr(pipeline, "_pool", fake_pool)
@@ -120,9 +118,7 @@ async def test_pipeline_rejects_unknown_columns(monkeypatch):
     )
     catalog = FakeCatalogWithTemporal(table)
     fake_llm = FakeLLM()
-    pipeline = QueryPipeline(
-        catalog, llm=fake_llm, intent_llm=fake_llm, explanation_llm=fake_llm
-    )
+    pipeline = QueryPipeline(catalog, llm=fake_llm, intent_llm=fake_llm, explanation_llm=fake_llm)
     monkeypatch.setattr(pipeline, "_pool", FakePool())
 
     async def fake_complete(*, system, user, model=None, max_tokens=None):  # noqa: ANN001
@@ -139,3 +135,58 @@ async def test_pipeline_rejects_unknown_columns(monkeypatch):
 
     with pytest.raises(ValueError, match="does not exist"):
         await pipeline.query("growth of revenue")
+
+
+def test_retry_hint_group_by() -> None:
+    from artoo.api.pipeline import _retry_hint
+
+    hint = _retry_hint('column "i.x" must appear in the GROUP BY clause or be used in an aggregate')
+    assert "GROUP BY" in hint and "CTE" in hint
+    assert _retry_hint("some unknown error") == ""
+
+
+@pytest.mark.asyncio
+async def test_retry_feeds_previous_sql_and_hint(monkeypatch) -> None:  # noqa: ANN001
+    table = TableDetail(
+        name="t", fqn="db.public.t", description="", columns=[ColumnMeta(name="a", data_type="int")]
+    )
+    pipeline = QueryPipeline(FakeCatalog(table))
+    prompts: list[str] = []
+    answers = iter(
+        [
+            json.dumps({"sql": "SELECT t.a, SUM(t.a) FROM t", "tables_used": ["t"]}),
+            json.dumps({"sql": "SELECT t.a, SUM(t.a) FROM t GROUP BY t.a", "tables_used": ["t"]}),
+        ]
+    )
+
+    async def fake_complete(*, system, user, **kw):  # noqa: ANN001, ANN003
+        prompts.append(user)
+        return next(answers)
+
+    class Conn:
+        n = 0
+
+        async def execute(self, q, timeout=None):  # noqa: ANN001
+            Conn.n += 1
+            if Conn.n == 1:
+                raise RuntimeError('column "t.a" must appear in the GROUP BY clause')
+
+    class Acq:
+        async def __aenter__(self):  # noqa: ANN204
+            return Conn()
+
+        async def __aexit__(self, *a):  # noqa: ANN002, ANN204
+            return None
+
+    class Pool:
+        def acquire(self):  # noqa: ANN202
+            return Acq()
+
+    async def fake_pool():  # noqa: ANN202
+        return Pool()
+
+    pipeline.llm = SimpleNamespace(complete=fake_complete)  # type: ignore[assignment]
+    monkeypatch.setattr(pipeline, "_ensure_pool", fake_pool)
+    _, sql = await pipeline._generate_sql_with_retry("Q", [table])
+    assert "GROUP BY" in sql
+    assert "SELECT t.a, SUM(t.a) FROM t" in prompts[1] and "Hint:" in prompts[1]

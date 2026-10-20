@@ -19,20 +19,20 @@ def test_get_conversion_factor():
     """Test conversion factor calculation between unit terms."""
     # Millones → Euros = 1,000,000
     assert get_conversion_factor("Millones_EUR", "Euros") == 1_000_000.0
-    
+
     # Miles → Euros = 1,000
     assert get_conversion_factor("Miles_EUR", "Euros") == 1_000.0
-    
+
     # Euros → Millones = 0.000001
     assert get_conversion_factor("Euros", "Millones_EUR") == 1e-6
-    
+
     # Miles → Millones = 0.001
     assert get_conversion_factor("Miles_EUR", "Millones_EUR") == 0.001
-    
+
     # Incompatible units → None
     assert get_conversion_factor("Millones_EUR", "Porcentaje_0_100") is None
     assert get_conversion_factor("Euros", "Dias") is None
-    
+
     # Unknown terms → None
     assert get_conversion_factor("UnknownUnit", "Euros") is None
 
@@ -60,7 +60,7 @@ def test_generate_conversion_rules_empty():
             foreign_keys=[],
         )
     ]
-    
+
     result = generate_conversion_rules(tables)
     assert result == ""
 
@@ -88,9 +88,9 @@ def test_generate_conversion_rules_single_unit():
             foreign_keys=[],
         )
     ]
-    
+
     result = generate_conversion_rules(tables)
-    
+
     # Should include column listing but no conversion examples (same unit)
     assert "UNIT CONVERSION RULES" in result
     assert "Column Units:" in result
@@ -133,9 +133,9 @@ def test_generate_conversion_rules_multi_unit():
             foreign_keys=[],
         ),
     ]
-    
+
     result = generate_conversion_rules(tables)
-    
+
     # Should include everything
     assert "UNIT CONVERSION RULES" in result
     assert "Column Units:" in result
@@ -143,7 +143,7 @@ def test_generate_conversion_rules_multi_unit():
     assert "Millones de Euros" in result
     assert "public.turismo.gasto_medio_eur" in result
     assert "public.indicadores_economicos.pib_millones_eur" in result
-    
+
     # Should include conversion examples
     assert "Conversion Examples (Monetary Units):" in result
     assert "CORRECT" in result
@@ -181,14 +181,14 @@ def test_generate_conversion_rules_three_units():
             foreign_keys=[],
         ),
     ]
-    
+
     result = generate_conversion_rules(tables)
-    
+
     # All three units should be listed
     assert "Euros" in result
     assert "Miles de Euros" in result
     assert "Millones de Euros" in result
-    
+
     # Multiple conversion pairs should exist
     assert result.count("CORRECT") >= 4  # At least 4 conversion examples (bidirectional)
     assert "1,000" in result or "1000" in result  # Miles conversion factor
@@ -207,9 +207,7 @@ def test_generate_conversion_rules_mixed_units():
                 ColumnMeta(
                     name="gdp_m_eur", data_type="NUMERIC", tags=["UnidadesMedida.Millones_EUR"]
                 ),
-                ColumnMeta(
-                    name="duration_days", data_type="INT", tags=["UnidadesMedida.Dias"]
-                ),
+                ColumnMeta(name="duration_days", data_type="INT", tags=["UnidadesMedida.Dias"]),
                 ColumnMeta(
                     name="rate_pct", data_type="NUMERIC", tags=["UnidadesMedida.Porcentaje_0_100"]
                 ),
@@ -217,20 +215,20 @@ def test_generate_conversion_rules_mixed_units():
             foreign_keys=[],
         ),
     ]
-    
+
     result = generate_conversion_rules(tables)
-    
+
     # All units should be listed
     assert "Euros" in result
     assert "Millones de Euros" in result
     assert "Días" in result
     assert "Porcentaje" in result
-    
+
     # But conversion examples should only exist for monetary units
     assert "Conversion Examples (Monetary Units):" in result
     assert "amount_eur" in result
     assert "gdp_m_eur" in result
-    
+
     # Non-monetary columns should not appear in conversion examples section
     lines = result.split("Conversion Examples (Monetary Units):")[1]
     assert "duration_days" not in lines
