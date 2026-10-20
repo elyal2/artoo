@@ -259,3 +259,40 @@ def test_table_enrichment_tier_clamped():
         TableEnrichment(table_description="x", columns={}, tier=6)
     with pytest.raises(ValidationError):
         TableEnrichment(table_description="x", columns={}, tier=0)
+
+
+def test_profile_patterns_apply_and_generic_stay(tmp_path) -> None:  # noqa: ANN001
+    from artoo.enricher.writer import _add_unit_documentation
+    from artoo.profile import load_profile
+
+    d = tmp_path / "fiction"
+    d.mkdir()
+    (d / "profile.yaml").write_text(
+        "unit_patterns:\n  - ['_widgets?$', 'widgets', 'Count of widgets']\n"
+        "  - ['(bad', 'x', 'y']\n  - [only, two]\n"
+    )
+    prof = load_profile("fiction", root=tmp_path)
+    assert len(prof.unit_patterns) == 1  # malformed entries dropped
+    assert "Count of widgets" in _add_unit_documentation("stock_widgets", "Stock.", prof)
+    assert "1 unit = 1 day" in _add_unit_documentation("stay_days", "Stay.", prof)
+    # without the profile the domain pattern is unknown
+    assert _add_unit_documentation("stock_widgets", "Stock.") == "Stock."
+
+
+def test_missing_profile_is_generic(tmp_path) -> None:  # noqa: ANN001
+    from artoo.profile import load_profile
+
+    assert load_profile("nope", root=tmp_path).unit_patterns == ()
+
+
+def test_engine_has_no_domain_terms() -> None:
+    import re
+    from pathlib import Path
+
+    banned = re.compile(r"hotel|huesped|\bpib\b|bkng|revpar|hospitality|booking", re.I)
+    offenders = []
+    for f in Path("src/artoo").rglob("*.py"):
+        for n, line in enumerate(f.read_text().splitlines(), 1):
+            if banned.search(line):
+                offenders.append(f"{f}:{n}: {line.strip()[:80]}")
+    assert not offenders, offenders

@@ -419,7 +419,7 @@ class QueryPipeline:
         if intent.intent == "conversational":
             reply = (
                 intent.reply
-                or "I can query your data catalog and answer questions about the data. Try asking something like 'show top revenue by hotel' or 'how many bookings last month'."
+                or "I can query your data catalog and answer questions about the data. Try asking about the available tables, e.g. 'list the tables' or 'how many records are there per category?'."
             )
             return QueryResponse(question=question, explanation=reply, confidence="high")
 

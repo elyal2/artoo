@@ -119,15 +119,6 @@ class OpenMetadataClient:
         resp.raise_for_status()
         raw = resp.json()
 
-        # Debug logging
-        import logging
-
-        logger = logging.getLogger(__name__)
-        if "indicadores_economicos" in fqn:
-            for col in raw.get("columns", []):
-                if "pib" in col["name"]:
-                    logger.info("DEBUG: Column %s tags: %s", col["name"], col.get("tags", []))
-
         # Build per-column example values from sampleData if available.
         # sampleData.columns is a list of column names; sampleData.rows is a list of value lists.
         sample_by_col: dict[str, list[str]] = {}

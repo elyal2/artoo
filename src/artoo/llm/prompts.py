@@ -8,7 +8,7 @@ ANALYSIS ORDER — think in this sequence:
 
 Respond with JSON:
 {
-  "table_description": "Clear, specific business description reflecting ACTUAL data patterns. NOT generic. Example: 'Bookings including dates, amounts, and status codes' is good. 'Booking table' is bad.",
+  "table_description": "Clear, specific business description reflecting ACTUAL data patterns. NOT generic. Example: 'Orders including dates, amounts, and status codes' is good. 'Order table' is bad.",
   "business_domain": "Specific business domain inferred from column VALUES, not from table name. Example: infer the domain from the data patterns and coded values, not from the table name itself.",
   "tier": 1-5,
   "columns": {
@@ -58,10 +58,10 @@ Rules:
 3. If a question asks for a time series or growth, use a REAL temporal column from the schema context. If none exists, do not fabricate one; instead use a non-temporal aggregation and explain the limitation.
 4. Use the EXACT coded values documented in the column descriptions (e.g., if description says 'tier: BRZ=Bronze, SLV=Silver, GLD=Gold', use 'BRZ' not 'Bronze').
 5. CRITICAL — JOINS: Only join two tables using a column that is explicitly listed in BOTH tables' COLUMNS sections AND appears in the RELATIONSHIPS section connecting them. Never invent join columns. If no direct FK path exists between two tables, route through a bridge/junction table whose relationships are declared in the schema (e.g., to reach 'products' from 'orders' you must go through 'order_items': orders JOIN order_items ON orders.order_id = order_items.order_id JOIN products ON order_items.product_id = products.product_id).
-6. CRITICAL — UNIT CONVERSION: Before writing ANY arithmetic expression involving two columns, check their descriptions for unit documentation (look for "(1 unit = ...)"). If units differ, you MUST apply conversion factors. Example: if pib_millones_eur has "(1 unit = 1,000,000€)" and gasto_medio_eur has "(1 unit = 1€)", then to calculate gasto_medio_eur as % of PIB you must write: (gasto_medio_eur / 1000000 / pib_millones_eur) * 100. If you see "_millones" or "_mill" in a column name and multiply/divide it with a non-millions column, divide the non-millions value by 1,000,000 first. Never ignore unit scale differences.
+6. CRITICAL — UNIT CONVERSION: Before writing ANY arithmetic expression involving two columns, check their descriptions for unit documentation (look for "(1 unit = ...)"). If units differ, you MUST apply conversion factors. Example: if total_millones_eur has "(1 unit = 1,000,000€)" and unit_cost_eur has "(1 unit = 1€)", then to express unit_cost_eur as a % of total_millones_eur you must write: (unit_cost_eur / 1000000 / total_millones_eur) * 100. If you see "_millones" or "_mill" in a column name and multiply/divide it with a non-millions column, divide the non-millions value by 1,000,000 first. Never ignore unit scale differences.
 7. Add LIMIT 100 unless the user asks for all results.
 8. Always SELECT individual columns — never use json_build_object, row_to_json, array_agg, or any JSON-wrapping function. Each value must be its own column.
-9. Always assign a short alias to every table (e.g. FROM bkng b, FROM prop p) and qualify EVERY column reference with its table alias (e.g. b.tot_amt, p.prop_name). Never reference a column without its table alias when more than one table is in scope.
+9. Always assign a short alias to every table (e.g. FROM orders o, FROM customers c) and qualify EVERY column reference with its table alias (e.g. o.total_amt, c.customer_name). Never reference a column without its table alias when more than one table is in scope.
 10. CRITICAL — AGGREGATION: Every non-aggregated column in SELECT, HAVING or ORDER BY must appear in GROUP BY. When computing a ratio or percentage between values from different tables or aggregates (e.g. a share of a total), aggregate each side separately in a CTE or subquery, then join and divide in the outer query. Guard divisors with NULLIF(x, 0).
 11. Return ONLY valid JSON with no prose before or after it:
    {"sql": "SELECT ...", "tables_used": ["table1"], "confidence": "high|medium|low", "reasoning": "list each table needed, the FK join path used (e.g. orders→order_items→products), and confirm every column exists in the listed table"}

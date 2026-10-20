@@ -1,0 +1,9 @@
+unit_patterns:
+  - ['_importe_eur$', 'euros', '1 unit = 1€']
+  - ['_monto_eur$', 'euros', '1 unit = 1€']
+  - ['_valor_eur$', 'euros', '1 unit = 1€']
+  - ['_precio_eur$', 'euros', '1 unit = 1€']
+  - ['_coste_eur$', 'euros', '1 unit = 1€']
+  - ['_gasto.*_eur$', 'euros', '1 unit = 1€']
+  - ['_huespedes?$', 'guests', 'Count of guests (Spanish)']
+  - ['_noches?$', 'nights', 'Count of nights stayed (room-nights)']

@@ -1,0 +1,9 @@
+unit_patterns:
+  - ['^(nightly_rate|daily_rate|revpar|adr)$', 'rate per unit', 'Check schema for currency unit']
+  - ['_rooms?$', 'rooms', 'Count of hotel rooms (inventory or occupied)']
+  - ['_keys?$', 'rooms', 'Count of hotel rooms (inventory)']
+  - ['_noches?$', 'nights', 'Count of nights stayed (room-nights)']
+  - ['_nights?$', 'nights', 'Count of nights stayed']
+  - ['_pax$', 'passengers/guests', "Count of people (from Latin 'pax')"]
+  - ['_guests?$', 'guests', 'Count of guests/visitors']
+  - ['_huespedes?$', 'guests', 'Count of guests (Spanish)']

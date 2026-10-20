@@ -50,8 +50,12 @@ class Settings(BaseSettings):
 
     # PostgreSQL (shared with OpenMetadata Postgres compose)
     demo_profile: str = Field(
-        default="hotel",
-        description="Demo data profile to load (maps to demos/<profile>/).",
+        default="",
+        description="Demo profile (maps to demos/<profile>/); empty = generic rules only.",
+    )
+    profiles_dir: str = Field(
+        default="demos",
+        description="Directory containing demo profiles (<profiles_dir>/<profile>/profile.yaml).",
     )
     postgres_dsn: str = Field(
         default="postgresql://artoo_demo:artoo_demo@postgresql:5432/artoo_demo"

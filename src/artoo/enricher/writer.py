@@ -5,6 +5,7 @@ import re
 
 from ..catalog.openmetadata import OpenMetadataClient
 from ..models import TableEnrichment
+from ..profile import DomainProfile, load_profile
 
 logger = logging.getLogger(__name__)
 
@@ -34,13 +35,6 @@ _UNIT_PATTERNS = [
         "Check schema for currency unit",
     ),
     (r"^(facturacion|ingresos|revenue)$", "monetary value", "Check schema for currency unit"),
-    (r"^(nightly_rate|daily_rate|revpar|adr)$", "rate per unit", "Check schema for currency unit"),
-    (r"_importe_eur$", "euros", "1 unit = 1€"),
-    (r"_monto_eur$", "euros", "1 unit = 1€"),
-    (r"_valor_eur$", "euros", "1 unit = 1€"),
-    (r"_precio_eur$", "euros", "1 unit = 1€"),
-    (r"_coste_eur$", "euros", "1 unit = 1€"),
-    (r"_gasto.*_eur$", "euros", "1 unit = 1€"),
     # Currency suffixes with plural support (ORDERED: longest first)
     (r"_euros?$", "euros", "1 unit = 1€"),
     (r"_(dollars?|usd)$", "US dollars", "1 unit = 1$"),  # dollars (7) > dollar (6) > usd (3)
@@ -76,14 +70,6 @@ _UNIT_PATTERNS = [
     (r"_units?$", "units", "Count of discrete items (not monetary)"),
     (r"_count$", "count", "Integer count"),
     (r"_freq(uency)?$", "frequency", "Occurrence frequency. Check schema for time period."),
-    # ── HOSPITALITY METRICS ─────────────────────────────────────────────────
-    (r"_rooms?$", "rooms", "Count of hotel rooms (inventory or occupied)"),
-    (r"_keys?$", "rooms", "Count of hotel rooms (inventory)"),
-    (r"_noches?$", "nights", "Count of nights stayed (room-nights)"),
-    (r"_nights?$", "nights", "Count of nights stayed"),
-    (r"_pax$", "passengers/guests", "Count of people (from Latin 'pax')"),
-    (r"_guests?$", "guests", "Count of guests/visitors"),
-    (r"_huespedes?$", "guests", "Count of guests (Spanish)"),
     # ── WEIGHTS & VOLUMES ───────────────────────────────────────────────────
     (r"_kilograms?$", "kilograms", "1 unit = 1 kg = 1,000 grams"),
     (r"_kg$", "kilograms", "1 unit = 1 kg = 1,000 grams"),
@@ -104,7 +90,14 @@ _UNIT_PATTERNS = [
 ]
 
 
-def _add_unit_documentation(col_name: str, description: str) -> str:
+def _all_patterns(profile: DomainProfile | None) -> list[tuple[str, str, str]]:
+    """Profile-specific patterns first, then the generic ones."""
+    return [*(profile.unit_patterns if profile else ()), *_UNIT_PATTERNS]
+
+
+def _add_unit_documentation(
+    col_name: str, description: str, profile: DomainProfile | None = None
+) -> str:
     """
     Detect unit suffix in column name and append conversion factor to description
     if not already present.
@@ -117,7 +110,7 @@ def _add_unit_documentation(col_name: str, description: str) -> str:
         return description
 
     # Try each pattern (in order of specificity)
-    for pattern, unit_name, conversion in _UNIT_PATTERNS:
+    for pattern, unit_name, conversion in _all_patterns(profile):
         if re.search(pattern, col_name, re.IGNORECASE):
             # Append conversion factor to description
             return f"{description.rstrip('.')}. Unit: {unit_name} ({conversion})."
@@ -169,8 +162,9 @@ def _infer_unit_glossary_term(col_name: str) -> str | None:
 
 
 class CatalogWriter:
-    def __init__(self, om_client: OpenMetadataClient) -> None:
+    def __init__(self, om_client: OpenMetadataClient, profile: DomainProfile | None = None) -> None:
         self.om = om_client
+        self.profile = profile if profile is not None else load_profile()
         # Tracks glossary terms created across all tables in this run to avoid redundant PUTs
         self._seen_glossary_terms: set[str] = set()
 
@@ -178,7 +172,9 @@ class CatalogWriter:
         # Post-process: add unit documentation to column descriptions
         for col_name, col_info in enrichment.columns.items():
             if col_info.description:
-                col_info.description = _add_unit_documentation(col_name, col_info.description)
+                col_info.description = _add_unit_documentation(
+                    col_name, col_info.description, self.profile
+                )
 
         # Build a single patch with table description + displayName + all column patches
         ops: list[dict[str, object]] = [
