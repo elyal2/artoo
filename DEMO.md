@@ -338,3 +338,37 @@ Para más información sobre el proyecto:
 - Repo Azure DevOps: https://dev.azure.com/logicalis-data-apps/artoo
 - Repo GitHub (backup): https://github.com/elyal2/artoo
 - Documentación técnica: `AGENTS.md`, `README.md`
+
+
+---
+
+## Perfil `insurance` — FNOL (seguros hogar y auto)
+
+```bash
+make demo-full DEMO_PROFILE=insurance   # clean + up + seed + bootstrap + crawl + enrich + api
+make accept DEMO_PROFILE=insurance      # ejecuta demos/insurance/questions.txt contra la API
+```
+
+Datos (sintéticos, deterministas): 500 clientes, 696 pólizas, 10 coberturas, 40 partners (grúas, fontanería,
+electricidad, cerrajería, cristalería), 3.000 siniestros, ~2.100 despachos y ~13.000 eventos de estado.
+Incluye estacionalidad, un partner lento y uno caro por oficio, rechazos por falta de cobertura/póliza
+caducada y un cluster de fraude (10 clientes con robos repetidos).
+
+Preguntas de aceptación (12, validadas con Claude Sonnet 5.5 en Bedrock `eu-south-2`; todas devuelven SQL y filas):
+
+1. ¿Cuántos siniestros se declararon por canal en el último mes?
+2. ¿Qué fontanero tiene mejor tiempo medio de llegada?
+3. ¿Qué porcentaje de siniestros se rechaza por falta de cobertura, por ramo? (HOME ≈ 27 %)
+4. ¿Cuál es el coste medio de las grúas por ciudad del partner?
+5. ¿Qué siniestros con score de fraude alto tienen partner asignado?
+6. ¿Cuántos siniestros hay por tipo de pérdida y mes?
+7. ¿Cuál es el tiempo medio desde la declaración hasta el cierre por tipo de pérdida?
+8. ¿Qué partners tienen una valoración media de clientes inferior a 3?
+9. ¿Qué clientes tienen más siniestros?
+10. ¿Cuál es el importe aprobado total por cobertura?
+11. ¿Cuántos despachos se cancelaron por tipo de partner?
+12. ¿Cuántos siniestros están abiertos ahora mismo y en qué estado?
+
+Latencia observada: 17–32 s por pregunta (intent + SQL + explicación + gráfico, todos con Sonnet 5.5).
+Notas: en la 5 el LLM eligió un umbral de fraude de 30 (no hay definición de "alto" en el catálogo);
+la 11 devuelve todos los estados porque no hay despachos cancelados en esta semilla.

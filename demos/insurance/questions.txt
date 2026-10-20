@@ -1,0 +1,12 @@
+¿Cuántos siniestros se declararon por canal en el último mes?
+¿Qué fontanero tiene mejor tiempo medio de llegada?
+¿Qué porcentaje de siniestros se rechaza por falta de cobertura, por ramo?
+¿Cuál es el coste medio de las grúas por ciudad del partner?
+¿Qué siniestros con score de fraude alto tienen partner asignado?
+¿Cuántos siniestros hay por tipo de pérdida y mes?
+¿Cuál es el tiempo medio desde la declaración hasta el cierre por tipo de pérdida?
+¿Qué partners tienen una valoración media de clientes inferior a 3?
+¿Qué clientes tienen más siniestros?
+¿Cuál es el importe aprobado total por cobertura?
+¿Cuántos despachos se cancelaron por tipo de partner?
+¿Cuántos siniestros están abiertos ahora mismo y en qué estado?

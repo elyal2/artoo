@@ -1,4 +1,4 @@
-.PHONY: up down seed enrich api bootstrap crawl demo demo-full _demo-banner logs ps help test lint lint-check clean
+.PHONY: up down seed enrich api bootstrap crawl demo demo-full _demo-banner logs ps help test lint lint-check accept clean
 
 COMPOSE_FILES=-f docker-compose.yml
 
@@ -97,6 +97,9 @@ lint:
 	uv run --all-extras ruff check . --fix
 	uv run --all-extras ruff format .
 	uv run --all-extras mypy src/
+
+accept:
+	uv run --all-extras python demos/$(DEMO_PROFILE)/acceptance.py
 
 lint-check:
 	uv run --all-extras ruff check .
