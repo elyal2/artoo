@@ -1,0 +1,4 @@
+unit_patterns:
+  - ['_eur_h$', 'euros per hour', '1 unit = 1€ per hour of work']
+  - ['_eur$', 'euros', '1 unit = 1€']
+  - ['_score$', 'score', 'Score on a 0-100 scale; higher means higher risk']

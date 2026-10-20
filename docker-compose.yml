@@ -11,6 +11,10 @@
 #
 #  ARTOO PoC: OpenMetadata (Postgres + ES) + demo data init + Superset + artoo-api / artoo-enricher.
 
+# Grupo (proyecto) de Docker Compose: todos los contenedores/volúmenes/redes aparecen
+# agrupados como "artoo" en Docker Desktop, independientemente del nombre del directorio.
+name: artoo
+
 volumes:
   ingestion-volume-dag-airflow:
   ingestion-volume-dags:

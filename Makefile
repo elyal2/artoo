@@ -17,7 +17,7 @@ help:
 	@echo "make demo-full - igual que demo + enrich"
 	@echo "make up        - reconstruye imágenes y levanta servicios (reutiliza volúmenes existentes)"
 	@echo "make clean     - para servicios y limpia volúmenes (equivalente a down)"
-	@echo "make seed      - carga datos demo en artoo_demo (DEMO_PROFILE=hotel|ecommerce|andorra)"
+	@echo "make seed      - carga datos demo en artoo_demo (DEMO_PROFILE=hotel|ecommerce|andorra|insurance)"
 	@echo "make bootstrap - registra el conector PostgreSQL en OpenMetadata"
 	@echo "make crawl     - ejecuta metadata ingestion via CLI"
 	@echo "make enrich    - ejecuta artoo-enricher (enriquecimiento semántico)"
