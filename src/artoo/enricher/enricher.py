@@ -3,7 +3,9 @@ from __future__ import annotations
 import json
 import logging
 import re
+from typing import Any
 
+from ..config import settings
 from ..llm.client import LLMClient
 from ..llm.prompts import ENRICHMENT_SYSTEM_PROMPT
 from ..models import TableContext, TableEnrichment
@@ -76,7 +78,12 @@ class SemanticEnricher:
 
     async def enrich(self, context: TableContext) -> TableEnrichment:
         prompt = _format_context(context)
-        response_text = await self.llm.complete(system=ENRICHMENT_SYSTEM_PROMPT, user=prompt)
+        model_kwargs: dict[str, Any] = (
+            {"model": settings.enrichment_llm_model} if settings.enrichment_llm_model else {}
+        )
+        response_text = await self.llm.complete(
+            system=ENRICHMENT_SYSTEM_PROMPT, user=prompt, **model_kwargs
+        )
         clean = _strip_markdown(response_text)
         try:
             return TableEnrichment.model_validate_json(clean)

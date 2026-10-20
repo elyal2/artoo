@@ -57,3 +57,21 @@ def test_bedrock_nova_body_no_system():
     client = _make_client()
     body = client._bedrock_nova_body(None, "User input", 512)
     assert "system" not in body
+
+
+def test_claude5_models_omit_temperature() -> None:
+    from artoo.config import LLMProvider
+    from artoo.llm.client import LLMClient, supports_temperature
+
+    assert not supports_temperature("eu.anthropic.claude-sonnet-5-5")
+    assert not supports_temperature("claude-sonnet-5-5")
+    assert supports_temperature("eu.anthropic.claude-sonnet-4-20250514-v1:0")
+    assert supports_temperature("eu.amazon.nova-lite-v1:0")
+    c = LLMClient(LLMProvider.BEDROCK, "m", None, 100, 0.2, None, "eu-south-2")
+    assert "temperature" not in c._bedrock_anthropic_body(
+        "s", "u", 10, "eu.anthropic.claude-sonnet-5-5"
+    )
+    assert (
+        c._bedrock_anthropic_body("s", "u", 10, "eu.anthropic.claude-sonnet-4-x")["temperature"]
+        == 0.2
+    )

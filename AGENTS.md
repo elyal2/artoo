@@ -40,7 +40,7 @@
 - Env load order: `.env.local` first, then `.env`. Extra vars silently ignored (`extra="ignore"`).
 - Default Postgres DSN uses Compose service name `postgresql` (not `localhost`).
 - Default OM URL uses Compose service name `openmetadata-server:8585` (not `localhost`).
-- Default LLM: `bedrock`, model `eu.amazon.nova-lite-v1:0`, region `eu-south-2`.
+- Default LLM: `bedrock`, model `eu.anthropic.claude-sonnet-5-5`, region `eu-south-2`. Claude 5.x rejects `temperature` → client omits it (`supports_temperature`). Token usage logged per call.
 - **Bedrock EU regions require `eu.` prefix** in model IDs: `eu.amazon.nova-lite-v1:0`, `eu.anthropic.claude-sonnet-4-20250514-v1:0`. Without prefix → `ValidationException: inference profile required`.
 - **Docker config cache**: `Settings` loads once at import time. Restart alone won't reload env vars — use `docker compose stop <svc> && docker compose rm -f <svc> && docker compose up -d <svc>`.
 - `LLM_AWS_PROFILE` must be **empty** in Docker — SSO unavailable in containers; use `AWS_ACCESS_KEY_ID` + `AWS_SECRET_ACCESS_KEY`.

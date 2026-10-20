@@ -42,7 +42,7 @@ class FakeLLM:
     def __init__(self, response: str) -> None:
         self._response = response
 
-    async def complete(self, *, system: str, user: str) -> str:  # noqa: ARG002
+    async def complete(self, *, system: str, user: str, **kwargs: object) -> str:  # noqa: ARG002
         return self._response
 
 

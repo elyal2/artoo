@@ -25,7 +25,7 @@ class Settings(BaseSettings):
 
     # LLM
     llm_provider: LLMProvider = Field(default=LLMProvider.BEDROCK)
-    llm_model: str = Field(default="eu.amazon.nova-lite-v1:0")
+    llm_model: str = Field(default="eu.anthropic.claude-sonnet-5-5")
     llm_intent_model: Optional[str] = Field(
         default=None,
         description="LLM model for intent classification (defaults to llm_model). Use a more capable model for better conversational/data_query routing.",
@@ -37,6 +37,10 @@ class Settings(BaseSettings):
     llm_chart_model: Optional[str] = Field(
         default=None,
         description="LLM model for chart visualization (defaults to llm_model). Use a more capable model like Claude Sonnet for better charts.",
+    )
+    enrichment_llm_model: Optional[str] = Field(
+        default=None,
+        description="LLM model for the enricher (defaults to llm_model). Can be a cheaper model.",
     )
     llm_chart_max_tokens: int = Field(
         default=4096,

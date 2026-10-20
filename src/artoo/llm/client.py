@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 from dataclasses import dataclass
 from typing import Any, Optional
 
@@ -13,6 +14,18 @@ from openai import AsyncOpenAI
 from ..config import LLMProvider, settings
 
 logger = logging.getLogger(__name__)
+
+
+def supports_temperature(model: str) -> bool:
+    """Claude 5.x models reject the `temperature` parameter (ValidationException)."""
+    return re.search(r"claude-(?:sonnet|opus|haiku|fable)-5", model) is None
+
+
+def _log_usage(model: str, input_tokens: Any, output_tokens: Any) -> None:
+    logger.info(
+        "LLM usage",
+        extra={"model": model, "input_tokens": input_tokens, "output_tokens": output_tokens},
+    )
 
 
 @dataclass(slots=True)
@@ -67,13 +80,17 @@ class LLMClient:
         if not self.api_key:
             raise RuntimeError("ANTHROPIC api key missing")
         client = AsyncAnthropic(api_key=self.api_key)
+        kwargs: dict[str, Any] = {}
+        if supports_temperature(model):
+            kwargs["temperature"] = self.temperature
         response = await client.messages.create(
             model=model,
             system=system or "",
             max_tokens=max_tokens,
-            temperature=self.temperature,
             messages=[{"role": "user", "content": user}],
+            **kwargs,
         )
+        _log_usage(model, response.usage.input_tokens, response.usage.output_tokens)
         return "".join(b.text for b in response.content if b.type == "text")
 
     async def _openai_complete(
@@ -91,6 +108,8 @@ class LLMClient:
                 {"role": "user", "content": user},
             ],
         )
+        if response.usage:
+            _log_usage(model, response.usage.prompt_tokens, response.usage.completion_tokens)
         return response.choices[0].message.content or ""
 
     def _is_anthropic_model(self, model: str) -> bool:
@@ -100,7 +119,7 @@ class LLMClient:
         self, system: Optional[str], user: str, model: str, max_tokens: int
     ) -> str:
         if self._is_anthropic_model(model):
-            body = self._bedrock_anthropic_body(system, user, max_tokens)
+            body = self._bedrock_anthropic_body(system, user, max_tokens, model)
         else:
             body = self._bedrock_nova_body(system, user, max_tokens)
 
@@ -115,6 +134,12 @@ class LLMClient:
                 body=json.dumps(body),
             )
             payload = json.loads(response["body"].read())
+            usage = payload.get("usage", {})
+            _log_usage(
+                model,
+                usage.get("input_tokens", usage.get("inputTokens")),
+                usage.get("output_tokens", usage.get("outputTokens")),
+            )
             if self._is_anthropic_model(model):
                 return str(payload.get("content", [{}])[0].get("text", ""))
             return str(
@@ -124,15 +149,16 @@ class LLMClient:
         return await asyncio.to_thread(_invoke)
 
     def _bedrock_anthropic_body(
-        self, system: Optional[str], user: str, max_tokens: int
+        self, system: Optional[str], user: str, max_tokens: int, model: str = ""
     ) -> dict[str, Any]:
         messages = [{"role": "user", "content": user}]
         body: dict[str, Any] = {
             "anthropic_version": "bedrock-2023-05-31",
             "max_tokens": max_tokens,
-            "temperature": self.temperature,
             "messages": messages,
         }
+        if supports_temperature(model):
+            body["temperature"] = self.temperature
         if system:
             body["system"] = system
         return body
