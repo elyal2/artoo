@@ -16,6 +16,32 @@ from ..config import LLMProvider, settings
 logger = logging.getLogger(__name__)
 
 
+@dataclass(frozen=True, slots=True)
+class Attachment:
+    """A PDF or image sent to a multimodal model alongside the text prompt."""
+
+    media_type: str
+    data_b64: str
+    name: str = ""
+
+    @property
+    def block_type(self) -> str:
+        return "document" if self.media_type == "application/pdf" else "image"
+
+    def as_content_block(self) -> dict[str, Any]:
+        return {
+            "type": self.block_type,
+            "source": {"type": "base64", "media_type": self.media_type, "data": self.data_b64},
+        }
+
+
+def _user_content(user: str, attachments: list[Attachment] | None) -> str | list[dict[str, Any]]:
+    """Plain string without attachments (unchanged behaviour); content blocks with them."""
+    if not attachments:
+        return user
+    return [a.as_content_block() for a in attachments] + [{"type": "text", "text": user}]
+
+
 def supports_temperature(model: str) -> bool:
     """Claude 5.x models reject the `temperature` parameter (ValidationException)."""
     return re.search(r"claude-(?:sonnet|opus|haiku|fable)-5", model) is None
@@ -57,9 +83,18 @@ class LLMClient:
         user: str,
         model: Optional[str] = None,
         max_tokens: Optional[int] = None,
+        attachments: Optional[list[Attachment]] = None,
     ) -> str:
         effective_model = model or self.model
         effective_tokens = max_tokens or self.max_tokens
+        if attachments and not (
+            self.provider == LLMProvider.ANTHROPIC
+            or (self.provider == LLMProvider.BEDROCK and self._is_anthropic_model(effective_model))
+        ):
+            raise ValueError(
+                f"Model {effective_model} ({self.provider.value}) cannot read PDF/image "
+                "attachments; use a Claude model for the documentation enricher."
+            )
         logger.debug(
             "LLM call: provider=%s model=%s max_tokens=%d",
             self.provider.value,
@@ -67,15 +102,24 @@ class LLMClient:
             effective_tokens,
         )
         if self.provider == LLMProvider.ANTHROPIC:
-            return await self._anthropic_complete(system, user, effective_model, effective_tokens)
+            return await self._anthropic_complete(
+                system, user, effective_model, effective_tokens, attachments
+            )
         if self.provider == LLMProvider.OPENAI:
             return await self._openai_complete(system, user, effective_model, effective_tokens)
         if self.provider == LLMProvider.BEDROCK:
-            return await self._bedrock_complete(system, user, effective_model, effective_tokens)
+            return await self._bedrock_complete(
+                system, user, effective_model, effective_tokens, attachments
+            )
         raise ValueError(f"Unsupported provider {self.provider}")
 
     async def _anthropic_complete(
-        self, system: Optional[str], user: str, model: str, max_tokens: int
+        self,
+        system: Optional[str],
+        user: str,
+        model: str,
+        max_tokens: int,
+        attachments: Optional[list[Attachment]] = None,
     ) -> str:
         if not self.api_key:
             raise RuntimeError("ANTHROPIC api key missing")
@@ -83,11 +127,12 @@ class LLMClient:
         kwargs: dict[str, Any] = {}
         if supports_temperature(model):
             kwargs["temperature"] = self.temperature
+        messages: list[Any] = [{"role": "user", "content": _user_content(user, attachments)}]
         response = await client.messages.create(
             model=model,
             system=system or "",
             max_tokens=max_tokens,
-            messages=[{"role": "user", "content": user}],
+            messages=messages,
             **kwargs,
         )
         _log_usage(model, response.usage.input_tokens, response.usage.output_tokens)
@@ -116,10 +161,15 @@ class LLMClient:
         return "anthropic" in model or "claude" in model
 
     async def _bedrock_complete(
-        self, system: Optional[str], user: str, model: str, max_tokens: int
+        self,
+        system: Optional[str],
+        user: str,
+        model: str,
+        max_tokens: int,
+        attachments: Optional[list[Attachment]] = None,
     ) -> str:
         if self._is_anthropic_model(model):
-            body = self._bedrock_anthropic_body(system, user, max_tokens, model)
+            body = self._bedrock_anthropic_body(system, user, max_tokens, model, attachments)
         else:
             body = self._bedrock_nova_body(system, user, max_tokens)
 
@@ -154,9 +204,14 @@ class LLMClient:
         return await asyncio.to_thread(_invoke)
 
     def _bedrock_anthropic_body(
-        self, system: Optional[str], user: str, max_tokens: int, model: str = ""
+        self,
+        system: Optional[str],
+        user: str,
+        max_tokens: int,
+        model: str = "",
+        attachments: Optional[list[Attachment]] = None,
     ) -> dict[str, Any]:
-        messages = [{"role": "user", "content": user}]
+        messages = [{"role": "user", "content": _user_content(user, attachments)}]
         body: dict[str, Any] = {
             "anthropic_version": "bedrock-2023-05-31",
             "max_tokens": max_tokens,

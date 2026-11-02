@@ -46,6 +46,13 @@ class Settings(BaseSettings):
         default=8192,
         description="Max tokens for enricher LLM responses (wide tables need long JSON).",
     )
+    doc_enricher_model: Optional[str] = Field(
+        default=None,
+        description="Multimodal Claude model for the documentation enricher (defaults to llm_model).",
+    )
+    doc_enricher_max_tokens: int = Field(default=16000, ge=1024)
+    doc_max_upload_mb: int = Field(default=25, ge=1, description="Total size of one upload batch.")
+    doc_max_text_chars: int = Field(default=200_000, ge=1000, description="Per text document.")
     enrichment_column_batch_size: int = Field(
         default=20,
         description=(

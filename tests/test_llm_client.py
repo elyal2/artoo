@@ -112,3 +112,41 @@ async def test_bedrock_anthropic_skips_non_text_blocks(monkeypatch) -> None:  # 
         LLMProvider.BEDROCK, "eu.anthropic.claude-sonnet-5-5", None, 100, 0.2, None, "eu-south-2"
     )
     assert await c.complete(system=None, user="hi") == "hello world"
+
+
+def test_attachment_block_types() -> None:
+    from artoo.llm.client import Attachment
+
+    pdf = Attachment("application/pdf", "AAAA", "a.pdf").as_content_block()
+    img = Attachment("image/png", "BBBB", "b.png").as_content_block()
+    assert pdf["type"] == "document" and img["type"] == "image"
+    assert pdf["source"] == {"type": "base64", "media_type": "application/pdf", "data": "AAAA"}
+
+
+def test_bedrock_anthropic_body_with_attachments_puts_files_before_text() -> None:
+    from artoo.llm.client import Attachment
+
+    client = _make_client()
+    body = client._bedrock_anthropic_body(
+        "sys",
+        "Describe these",
+        1024,
+        attachments=[Attachment("application/pdf", "AAAA"), Attachment("image/png", "BBBB")],
+    )
+    content = body["messages"][0]["content"]
+    assert [b["type"] for b in content] == ["document", "image", "text"]
+    assert content[-1]["text"] == "Describe these"
+
+
+@pytest.mark.asyncio
+async def test_attachments_rejected_for_models_without_vision() -> None:
+    from artoo.llm.client import Attachment
+
+    client = _make_client()
+    with pytest.raises(ValueError, match="cannot read PDF/image"):
+        await client.complete(
+            system=None,
+            user="x",
+            model="eu.amazon.nova-lite-v1:0",
+            attachments=[Attachment("application/pdf", "AAAA")],
+        )
