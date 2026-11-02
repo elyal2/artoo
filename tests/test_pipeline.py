@@ -227,6 +227,12 @@ def _pipeline_with_rows(monkeypatch, rows):  # noqa: ANN001, ANN202
     )
     monkeypatch.setattr(pipeline, "_pool", FakePool())
     monkeypatch.setattr(FakeConn, "rows", rows)
+
+    async def no_chart(*args, **kwargs):  # noqa: ANN002, ANN003, ANN202
+        return None
+
+    # the chart step needs a real LLM client (and depends on LLM_CHART_MODEL); not under test here
+    monkeypatch.setattr(pipeline, "_recommend_chart", no_chart)
     return pipeline
 
 
