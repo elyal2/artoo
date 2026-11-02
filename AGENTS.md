@@ -4,11 +4,12 @@
 - `src/artoo/` — all application code.
 - `src/artoo/api/server.py` — FastAPI entrypoint; mounts MCP at `/mcp`, static chat UI at `/`, adds `NoCacheStaticMiddleware` for all non-API paths.
 - `src/artoo/enricher/__main__.py` — CLI: `--bootstrap-only` registers the OM connector; default mode runs taxonomy bootstrap then per-table semantic enrichment.
+- `src/artoo/enricher/doc_enricher.py` + `documents.py` + `proposal.py` + `applier.py` — documentation enricher: uploaded PDFs/images/text + the current OM catalog → reviewable `Proposal` → `ProposalApplier` writes the accepted items. Served by `/api/catalog/propose|apply`, UI in `src/artoo/chat/catalog.js|css` (Catalog tab).
 - `src/artoo/config.py` — single `Settings` (pydantic-settings, `extra="ignore"`) instantiated at module level as `settings`. Loaded at import time — cannot be patched after import without reloading.
 - `openmetadata/` — bootstrap/crawl helper scripts consumed by the Makefile only; not importable app code.
 - `src/artoo/profile.py` — loads optional `demos/<profile>/profile.yaml` (`unit_patterns` extra column-name→unit rules). Domain knowledge lives there, never in `src/` (enforced by `test_engine_has_no_domain_terms`). `DEMO_PROFILE` default in `config.py` is empty (generic rules only).
 - `demos/<profile>/` — each profile has `profile.yaml`, `init.sh` (Postgres init, mounted as `02-init.sh`) and `seed.py` run inside the container. Available profiles: `hotel` (default), `ecommerce`, `andorra`, `insurance`.
-- `tests/` — 96 pure unit tests; no Docker or network required.
+- `tests/` — 129 pure unit tests; no Docker or network required.
 
 ## Commands
 - **Always `uv`, never `pip`.**
@@ -61,7 +62,7 @@ Results: the SQL runs once through a cursor capped at `MAX_RESULT_ROWS` (default
 Keep all LLM prompts domain-agnostic — no hardcoded business rules. Rely entirely on schema context, column descriptions, and FK relationships from OpenMetadata.
 
 ## API Endpoints
-`POST /api/query` · `GET /api/results/{id}?page&size&sort` · `GET /api/results/{id}/export?delimiter&sort` · `GET /api/tables` · `GET /api/table/{fqn}` · `GET /health` · `/mcp`
+`POST /api/query` · `GET /api/results/{id}?page&size&sort` · `GET /api/results/{id}/export?delimiter&sort` · `POST /api/catalog/propose` (multipart) · `POST /api/catalog/apply` · `GET /api/tables` · `GET /api/table/{fqn}` · `GET /health` · `/mcp`
 
 Static files served from `src/artoo/chat/` at `/` with `no-cache` headers on every response.
 
@@ -73,6 +74,9 @@ Two-step, idempotent:
 2. **Per-table enrichment** (all best-effort): column descriptions + display names; `PII.Sensitive` tag for any PII column; `PIIType.*` tag when `pii_type` non-null; `DataSensitivity.*` on every column; `Tier.Tier{1-5}` + `Business.*` on the table; domain assignment (`business_domain` normalized: `customer_ops` → `Customer Ops`); `commonQueries` in `extension`; glossary term per unique `business_name` (dedup in `CatalogWriter._seen_glossary_terms` across full run); unit detection via regex patterns → `UnidadesMedida.*` tags on columns with numeric units.
 
 3. **Unit enrichment post-processor**: `_enrich_unit_descriptions()` detects 83 unit patterns (monetary: millones/miles/k, percentages, time, counts, weights, volumes, finance bps) and enhances column descriptions with explicit unit context. Post-processor uses word boundaries to avoid false positives.
+
+## Documentation Enricher (Catalog tab)
+Domain knowledge is never hardcoded: the model receives the catalog as OpenMetadata holds it (tables, columns, descriptions, FKs, `businessRules`) plus the uploaded documents, and proposes `ProposalItem`s (`table_description`, `table_business_rules`, `table_display_name`, `column_description`, `column_display_name`), each with `source`, `confidence`, `before` (read from OM, not from the model) and `after`; ambiguities go to `open_questions`. Items with unknown table/column or no source are discarded. Nothing is written by `propose`. `apply` re-reads each table and refuses an item whose current value no longer equals `before`. Business rules live in the table custom property `businessRules` (registered on demand), are shown as `BUSINESS RULES` in the SQL schema context and treated as mandatory defaults by the query prompt. Needs a Claude model (`DOC_ENRICHER_MODEL`, falls back to `ENRICHMENT_LLM_MODEL`/`LLM_MODEL`); `DOC_ENRICHER_MAX_TOKENS`, `DOC_MAX_UPLOAD_MB` bound it. Documents are untrusted data (prompt says so; a human reviews before apply).
 
 ## Docker / Postgres Init
 - Multi-stage `Dockerfile`: named targets `enricher` and `api`.

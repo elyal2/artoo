@@ -374,3 +374,15 @@ Notas: en la 5 el LLM eligió un umbral de fraude de 30 (no hay definición de "
 la 11 devuelve todos los estados porque no hay despachos cancelados en esta semilla.
 
 ---
+
+## Enriquecer el catálogo desde documentación (pestaña Catalog)
+
+1. En el chat, pestaña **Catalog**: arrastra PDF, imágenes, docx, csv/md/txt/json/yaml/sql (hasta 10 ficheros)
+   y, si quieres, una nota para el modelo.
+2. **Analyze documents**: un modelo Claude lee los documentos junto al catálogo que ya tiene OpenMetadata
+   (tablas, descripciones, FKs, reglas) y propone cambios. Tarda 30–60 s. No escribe nada.
+3. Cada propuesta muestra *lo que hay ahora* frente a *lo propuesto* (editable), la **fuente** (documento, página,
+   cita) y la confianza. Las dudas que el modelo no puede resolver salen aparte como **Open questions**.
+4. **Apply selected** escribe en OpenMetadata (descripciones, nombres y la propiedad `businessRules`). Si alguien
+   cambió el valor mientras tanto, ese ítem se rechaza y hay que volver a proponer.
+5. Vuelve a **Chat** y pregunta: las reglas aplicadas (p. ej. «versión vigente») se usan por defecto en el SQL.

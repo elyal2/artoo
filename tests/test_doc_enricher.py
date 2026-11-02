@@ -35,6 +35,10 @@ class FakeCatalog:
         self.patches: list[tuple[str, list]] = []
         self.extensions: list[tuple[str, dict]] = []
         self.fail_on: set[str] = set()
+        self.registered: list[str] = []
+
+    async def register_table_custom_property(self, name: str, description: str) -> None:
+        self.registered.append(name)
 
     async def list_tables(self):  # noqa: ANN201
         return [TableSummary(name=n) for n in self.tables]
@@ -307,6 +311,7 @@ async def test_apply_writes_each_field_to_the_right_place():
     assert [o.status for o in result.outcomes] == ["ok"] * 4 and result.applied == 4
     assert catalog.patches[0][1] == [{"op": "add", "path": "/description", "value": "New desc"}]
     assert catalog.extensions == [(FQN, {"businessRules": "- rule"})]
+    assert catalog.registered == ["businessRules"]  # property created on demand
     assert catalog.patches[1][1][0]["path"] == "/columns/2/description"
     assert catalog.patches[2][1][0]["path"] == "/columns/2/displayName"
 

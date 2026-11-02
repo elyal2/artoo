@@ -4,6 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Data Chat</title>
+  <link rel="stylesheet" href="catalog.css" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500&display=swap" rel="stylesheet" />
@@ -618,10 +619,17 @@
     <!-- sidebar -->
     <aside id="sidebar">
       <button id="new-chat-btn" title="New conversation">+ New chat</button>
+      <div class="view-switch" role="tablist" aria-label="View">
+        <button type="button" role="tab" data-view="chat" class="active">Chat</button>
+        <button type="button" role="tab" data-view="catalog">Catalog</button>
+      </div>
       <div class="sidebar-title">Tables</div>
       <div class="sidebar-count" id="table-count"></div>
       <div id="table-list"></div>
     </aside>
+
+    <!-- catalog: enrich from documentation (see catalog.js) -->
+    <section id="catalog-area" aria-label="Catalog enrichment"></section>
 
     <!-- chat -->
     <div id="chat-area">
@@ -1137,6 +1145,7 @@
 
     // ── new chat ─────────────────────────────────────────────
     document.getElementById('new-chat-btn').addEventListener('click', () => {
+      if (window.showView) showView('chat');
       conversationHistory = [];
       thread.innerHTML = '';
       thread.appendChild(empty);
@@ -1169,6 +1178,7 @@
           const displayName = t.display_name || t.business_domain || tech;
           item.innerHTML = `<div class="table-tech" title="${escHtml(t.description || '')}">${escHtml(displayName)}</div><div class="table-domain">${escHtml(tech)}</div>`;
           item.addEventListener('click', () => {
+            if (window.showView) showView('chat');
             const q = buildSelectAllQuestion(t.name, displayName);
             setInput(q);
             textarea.focus();
@@ -1186,5 +1196,6 @@
       } catch {}
     })();
   </script>
+  <script src="catalog.js"></script>
 </body>
 </html>

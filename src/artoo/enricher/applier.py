@@ -5,7 +5,11 @@ from __future__ import annotations
 import logging
 from collections import defaultdict
 
-from ..catalog.openmetadata import BUSINESS_RULES_PROPERTY, OpenMetadataClient
+from ..catalog.openmetadata import (
+    BUSINESS_RULES_DESCRIPTION,
+    BUSINESS_RULES_PROPERTY,
+    OpenMetadataClient,
+)
 from ..models import TableDetail
 from .proposal import (
     COLUMN_FIELDS,
@@ -29,6 +33,14 @@ class ProposalApplier:
         self.catalog = catalog
 
     async def apply(self, items: list[ProposalItem]) -> ApplyResult:
+        if any(i.field == "table_business_rules" for i in items):
+            # Catalogs enriched before this property existed do not have it yet.
+            try:
+                await self.catalog.register_table_custom_property(
+                    BUSINESS_RULES_PROPERTY, BUSINESS_RULES_DESCRIPTION
+                )
+            except Exception as exc:
+                logger.warning("Could not register the businessRules property: %s", exc)
         by_table: dict[str, list[ProposalItem]] = defaultdict(list)
         for item in items:
             by_table[item.table].append(item)

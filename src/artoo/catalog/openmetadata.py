@@ -13,6 +13,11 @@ from ..models import ColumnMeta, SchemaColumn, TableDetail, TableSummary
 logger = logging.getLogger(__name__)
 
 BUSINESS_RULES_PROPERTY = "businessRules"
+BUSINESS_RULES_DESCRIPTION = (
+    "Business rules that must be applied by default when querying this table "
+    "(e.g. which row version is current, what marks a record as valid). "
+    "Written from client documentation by the ARTOO catalog enricher."
+)
 
 
 async def _login_token(base_url: str) -> str:
@@ -558,10 +563,7 @@ class OpenMetadataClient:
 
         try:
             await self.register_table_custom_property(
-                BUSINESS_RULES_PROPERTY,
-                "Business rules that must be applied by default when querying this table "
-                "(e.g. which row version is current, what marks a record as valid). "
-                "Written from client documentation by the ARTOO catalog enricher.",
+                BUSINESS_RULES_PROPERTY, BUSINESS_RULES_DESCRIPTION
             )
         except Exception as exc:
             logger.warning(
