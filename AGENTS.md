@@ -7,8 +7,8 @@
 - `src/artoo/config.py` — single `Settings` (pydantic-settings, `extra="ignore"`) instantiated at module level as `settings`. Loaded at import time — cannot be patched after import without reloading.
 - `openmetadata/` — bootstrap/crawl helper scripts consumed by the Makefile only; not importable app code.
 - `src/artoo/profile.py` — loads optional `demos/<profile>/profile.yaml` (`unit_patterns` extra column-name→unit rules). Domain knowledge lives there, never in `src/` (enforced by `test_engine_has_no_domain_terms`). `DEMO_PROFILE` default in `config.py` is empty (generic rules only).
-- `demos/<profile>/` — each profile has `profile.yaml`, `init.sh` (Postgres init, mounted as `02-init.sh`) and `seed.py` run inside the container. Available profiles: `hotel` (default), `ecommerce`, `andorra`.
-- `tests/` — 55 pure unit tests; no Docker or network required.
+- `demos/<profile>/` — each profile has `profile.yaml`, `init.sh` (Postgres init, mounted as `02-init.sh`) and `seed.py` run inside the container. Available profiles: `hotel` (default), `ecommerce`, `andorra`, `insurance`.
+- `tests/` — 63 pure unit tests; no Docker or network required.
 
 ## Commands
 - **Always `uv`, never `pip`.**

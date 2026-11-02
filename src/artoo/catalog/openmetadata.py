@@ -161,7 +161,8 @@ class OpenMetadataClient:
             display_name=raw.get("displayName"),
             business_domain=business_domain,
             columns=cols,
-            foreign_keys=[fk for fk in (self._fk_name(c) for c in raw.get("columns", [])) if fk],
+            foreign_keys=self._table_foreign_keys(raw)
+            + [fk for fk in (self._fk_name(c) for c in raw.get("columns", [])) if fk],
         )
 
     @staticmethod
@@ -199,6 +200,30 @@ class OpenMetadataClient:
                 if target and isinstance(target, dict):
                     return f"{target.get('table')}.{target.get('column') or target.get('name')}"
         return None
+
+    @staticmethod
+    def _table_foreign_keys(raw: dict[str, Any]) -> list[str]:
+        """Render OM ``tableConstraints`` FOREIGN_KEY entries, composite keys included.
+
+        OM stores foreign keys on the table, not on the column; ``referredColumns`` are column
+        FQNs (``service.db.schema.table.column``). Output: ``t(a, b) -> other(x, y)``.
+        """
+        table = str(raw.get("name") or "").split(".")[-1]
+        result: list[str] = []
+        for constraint in raw.get("tableConstraints") or []:
+            if constraint.get("constraintType") != "FOREIGN_KEY":
+                continue
+            cols: list[str] = constraint.get("columns") or []
+            refs: list[str] = constraint.get("referredColumns") or []
+            if not cols or len(cols) != len(refs):
+                continue
+            parts = [ref.rsplit(".", 1) for ref in refs]
+            if any(len(p) != 2 for p in parts):
+                continue
+            target_table = parts[0][0].split(".")[-1]
+            target_cols = ", ".join(p[1] for p in parts)
+            result.append(f"{table}({', '.join(cols)}) -> {target_table}({target_cols})")
+        return result
 
     async def semantic_search(self, query: str, n_results: int = 5) -> list[TableDetail]:
         # Normalize query: strip extra whitespace, replace newlines with spaces

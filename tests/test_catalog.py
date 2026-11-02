@@ -91,3 +91,52 @@ def test_parse_table_summary_without_domain():
         business_domain=OpenMetadataClient._domain_name(None),
     )
     assert summary.business_domain is None
+
+
+def test_table_foreign_keys_simple():
+    raw = {
+        "name": "orders",
+        "tableConstraints": [
+            {
+                "constraintType": "FOREIGN_KEY",
+                "columns": ["customer_id"],
+                "referredColumns": ["svc.db.public.customers.customer_id"],
+            }
+        ],
+    }
+    assert OpenMetadataClient._table_foreign_keys(raw) == [
+        "orders(customer_id) -> customers(customer_id)"
+    ]
+
+
+def test_table_foreign_keys_composite():
+    raw = {
+        "name": "ops",
+        "tableConstraints": [
+            {
+                "constraintType": "FOREIGN_KEY",
+                "columns": ["agent", "entity", "origin"],
+                "referredColumns": [
+                    "svc.db.s.agents.agent_code",
+                    "svc.db.s.agents.entity",
+                    "svc.db.s.agents.origin",
+                ],
+            }
+        ],
+    }
+    assert OpenMetadataClient._table_foreign_keys(raw) == [
+        "ops(agent, entity, origin) -> agents(agent_code, entity, origin)"
+    ]
+
+
+def test_table_foreign_keys_ignores_other_and_malformed_constraints():
+    raw = {
+        "name": "t",
+        "tableConstraints": [
+            {"constraintType": "UNIQUE", "columns": ["a"]},
+            {"constraintType": "FOREIGN_KEY", "columns": ["a", "b"], "referredColumns": ["x.y.z"]},
+            {"constraintType": "FOREIGN_KEY", "columns": ["a"], "referredColumns": ["nodots"]},
+        ],
+    }
+    assert OpenMetadataClient._table_foreign_keys(raw) == []
+    assert OpenMetadataClient._table_foreign_keys({"name": "t"}) == []

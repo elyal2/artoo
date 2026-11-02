@@ -372,3 +372,5 @@ Preguntas de aceptación (12, validadas con Claude Sonnet 5.5 en Bedrock `eu-sou
 Latencia observada: 17–32 s por pregunta (intent + SQL + explicación + gráfico, todos con Sonnet 5.5).
 Notas: en la 5 el LLM eligió un umbral de fraude de 30 (no hay definición de "alto" en el catálogo);
 la 11 devuelve todos los estados porque no hay despachos cancelados en esta semilla.
+
+---
