@@ -6,7 +6,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, cast
 
-from fastapi import Depends, FastAPI, HTTPException, Query, Request
+from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
@@ -15,6 +15,10 @@ from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoin
 
 from ..catalog.openmetadata import OpenMetadataClient, get_default_client
 from ..config import settings
+from ..enricher.applier import ProposalApplier
+from ..enricher.doc_enricher import DocEnricher
+from ..enricher.documents import UploadedFile
+from ..enricher.proposal import ApplyRequest, ApplyResult, Proposal
 from ..logging import configure_logging
 from ..models import (
     ConversationMessage,
@@ -159,6 +163,40 @@ async def api_result_export(
         media_type="text/csv; charset=utf-8",
         headers={"Content-Disposition": f'attachment; filename="artoo-{stored.result_id}.csv"'},
     )
+
+
+MAX_UPLOAD_FILES = 10
+
+
+@app.post("/api/catalog/propose", response_model=Proposal)
+async def api_catalog_propose(
+    files: list[UploadFile] = File(...),
+    instructions: str = Form(default=""),
+    catalog: OpenMetadataClient = Depends(get_catalog),
+) -> Proposal:
+    """Read business documentation and propose catalog changes. Writes nothing."""
+    if len(files) > MAX_UPLOAD_FILES:
+        raise HTTPException(status_code=400, detail=f"At most {MAX_UPLOAD_FILES} files per upload.")
+    uploads = [UploadedFile(f.filename or "document", await f.read()) for f in files]
+    try:
+        return await DocEnricher(catalog).propose(uploads, instructions)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:
+        logger.exception("Documentation enrichment failed")
+        raise HTTPException(
+            status_code=502, detail=f"The model could not process the documents: {exc}"
+        )
+
+
+@app.post("/api/catalog/apply", response_model=ApplyResult)
+async def api_catalog_apply(
+    req: ApplyRequest, catalog: OpenMetadataClient = Depends(get_catalog)
+) -> ApplyResult:
+    """Write the reviewed (and possibly edited) items of a proposal to OpenMetadata."""
+    if not req.items:
+        raise HTTPException(status_code=400, detail="No items to apply.")
+    return await ProposalApplier(catalog).apply(req.items)
 
 
 @app.get("/api/tables", response_model=list[TableSummary])

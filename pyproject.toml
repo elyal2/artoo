@@ -19,6 +19,7 @@ dependencies = [
   "faker>=30.0",
   "sqlglot>=30.4.3",
   "pyyaml>=6.0.3",
+  "python-multipart>=0.0.26",
 ]
 
 [project.optional-dependencies]

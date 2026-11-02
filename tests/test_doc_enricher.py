@@ -344,3 +344,63 @@ async def test_apply_unknown_table_and_column():
     )
     assert [o.status for o in result.outcomes] == ["error", "error"]
     assert "Unknown column" in result.outcomes[1].detail
+
+
+# --- HTTP endpoints ---------------------------------------------------------------
+
+
+def _client(catalog, llm=None):  # noqa: ANN001, ANN202
+    from fastapi.testclient import TestClient
+
+    from artoo.api import server
+
+    server.app.dependency_overrides[server.get_catalog] = lambda: catalog
+    if llm is not None:
+        import artoo.api.server as srv
+
+        srv.DocEnricher = lambda cat: DocEnricher(cat, llm)  # type: ignore[assignment, misc]
+    return TestClient(server.app)
+
+
+@pytest.fixture(autouse=True)
+def _reset_overrides():  # noqa: ANN202
+    from artoo.api import server
+
+    original = server.DocEnricher
+    yield
+    server.app.dependency_overrides.clear()
+    server.DocEnricher = original  # type: ignore[misc]
+
+
+def test_propose_endpoint_returns_a_proposal():
+    http = _client(FakeCatalog([_table()]), FakeLLM(_output([_item()])))
+    resp = http.post(
+        "/api/catalog/propose",
+        files=[("files", ("spec.md", b"latest version wins", "text/markdown"))],
+        data={"instructions": "be brief"},
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["items"][0]["field"] == "table_business_rules" and body["documents"] == ["spec.md"]
+
+
+def test_propose_endpoint_limits_number_of_files():
+    http = _client(FakeCatalog([_table()]), FakeLLM(_output()))
+    files = [("files", (f"f{i}.txt", b"x", "text/plain")) for i in range(11)]
+    assert http.post("/api/catalog/propose", files=files).status_code == 400
+
+
+def test_propose_endpoint_maps_errors():
+    http = _client(FakeCatalog([]), FakeLLM(_output()))
+    resp = http.post("/api/catalog/propose", files=[("files", ("a.txt", b"x", "text/plain"))])
+    assert resp.status_code == 400 and "no tables" in resp.json()["detail"]
+
+
+def test_apply_endpoint_writes_and_reports():
+    catalog = FakeCatalog([_table()])
+    http = _client(catalog)
+    item = _pi("table_business_rules", "- rule").model_dump()
+    resp = http.post("/api/catalog/apply", json={"items": [item]})
+    assert resp.status_code == 200 and resp.json()["outcomes"][0]["status"] == "ok"
+    assert catalog.extensions == [(FQN, {"businessRules": "- rule"})]
+    assert http.post("/api/catalog/apply", json={"items": []}).status_code == 400
