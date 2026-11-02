@@ -30,6 +30,7 @@ from ..models import (
     SQLResponse,
     TableDetail,
 )
+from .results import ResultCache
 from .validator import validate_sql
 
 logger = logging.getLogger(__name__)
@@ -154,6 +155,10 @@ class QueryPipeline:
             self.explanation_llm = self.llm
         self._pool: asyncpg.Pool | None = None
         self._dsn = _pg_dsn(settings.postgres_dsn)
+        self.results = ResultCache(
+            ttl_seconds=settings.result_cache_ttl_seconds,
+            max_entries=settings.result_cache_max_entries,
+        )
 
     async def _ensure_pool(self) -> asyncpg.Pool:
         if self._pool is None:
@@ -395,8 +400,20 @@ class QueryPipeline:
 
         raise ValueError(last_error or "SQL generation failed")
 
+    async def _fetch_capped(self, sql: str, cap: int) -> list[Any]:
+        """Run the query through a cursor and read at most `cap` + 1 rows (the extra row
+        tells the caller the result was truncated) without loading the whole result set."""
+        pool = await self._ensure_pool()
+        timeout = settings.query_timeout_seconds
+        async with pool.acquire() as conn, conn.transaction():
+            cursor = await conn.cursor(sql, timeout=timeout)
+            return list(await cursor.fetch(cap + 1, timeout=timeout))
+
     async def query(
-        self, question: str, history: list[ConversationMessage] | None = None
+        self,
+        question: str,
+        history: list[ConversationMessage] | None = None,
+        page_size: int | None = None,
     ) -> QueryResponse:
         # ── intent classification ─────────────────────────────────────────────
         conversation_context = ""
@@ -444,11 +461,11 @@ class QueryPipeline:
         )
         parsed, sql = await self._generate_sql_with_retry(base_user_msg, tables)
 
-        pool = await self._ensure_pool()
-        timeout = settings.query_timeout_seconds
-        async with pool.acquire() as conn:
-            rows = await conn.fetch(sql, timeout=timeout)
-        rows_dict = [_serialize_row(dict(r)) for r in rows[: settings.max_result_rows]]
+        cap = settings.max_result_rows
+        fetched = await self._fetch_capped(sql, cap)
+        truncated = len(fetched) > cap
+        rows_dict = [_serialize_row(dict(r)) for r in fetched[:cap]]
+        size = max(1, min(page_size or settings.result_page_size, settings.result_page_size_max))
 
         # Build explanation context with full statistics
         sample_for_llm = rows_dict[:5]
@@ -457,6 +474,7 @@ class QueryPipeline:
             "sql": sql,
             "sample": sample_for_llm,
             "total_rows": len(rows_dict),
+            "truncated_at_row_cap": truncated,
         }
 
         # Add numeric column ranges if present
@@ -482,17 +500,36 @@ class QueryPipeline:
 
         column_labels = self._build_column_labels(tables, rows_dict)
 
-        chart_spec = await self._recommend_chart(question, sql, rows_dict, column_labels)
+        # The chart is drawn from the rows the client holds (one page): only recommend it
+        # when the whole result fits there.
+        chart_spec = (
+            await self._recommend_chart(question, sql, rows_dict, column_labels)
+            if len(rows_dict) <= size
+            else None
+        )
+
+        stored = self.results.put(
+            question=question,
+            sql=sql,
+            rows=rows_dict,
+            truncated=truncated,
+            column_labels=column_labels,
+        )
 
         return QueryResponse(
             question=question,
             sql=sql,
             explanation=explanation,
-            rows=rows_dict,
+            rows=rows_dict[:size],
             tables_used=parsed.tables_used,
             confidence=parsed.confidence,
             column_labels=column_labels,
             chart_spec=chart_spec,
+            result_id=stored.result_id,
+            total_rows=len(rows_dict),
+            page=0,
+            page_size=size,
+            truncated=truncated,
         )
 
     async def _recommend_chart(

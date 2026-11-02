@@ -96,6 +96,23 @@ class QueryResponse(BaseModel):
     confidence: str = "high"
     column_labels: Dict[str, str] = Field(default_factory=dict)
     chart_spec: Optional[ChartSpec] = None
+    result_id: Optional[str] = None
+    total_rows: int = 0
+    page: int = 0
+    page_size: int = 0
+    truncated: bool = False
+
+
+class ResultPage(BaseModel):
+    result_id: str
+    page: int
+    page_size: int
+    total_rows: int
+    truncated: bool
+    sort: Optional[str] = None
+    columns: List[str] = Field(default_factory=list)
+    column_labels: Dict[str, str] = Field(default_factory=dict)
+    rows: List[Dict[str, Any]] = Field(default_factory=list)
 
 
 class TableSummary(BaseModel):

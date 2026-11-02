@@ -64,12 +64,33 @@ class FakeCatalogWithTemporal(OpenMetadataClient):  # type: ignore[misc]
         return None
 
 
+class FakeCursor:
+    def __init__(self, rows):  # noqa: ANN001
+        self._rows = rows
+
+    async def fetch(self, n, **kwargs):  # noqa: ANN001
+        return self._rows[:n]
+
+
+class FakeTransaction:
+    async def __aenter__(self):  # noqa: ANN204
+        return None
+
+    async def __aexit__(self, exc_type, exc, tb):  # noqa: ANN001
+        return False
+
+
 class FakeConn:
+    rows: list = [{"value": 1}]
+
     async def execute(self, sql, **kwargs):  # noqa: ANN001  # EXPLAIN dry-run
         return None
 
-    async def fetch(self, sql, **kwargs):  # noqa: ANN001
-        return [SimpleNamespace(value=1).__dict__]
+    def transaction(self):  # noqa: ANN201
+        return FakeTransaction()
+
+    async def cursor(self, sql, **kwargs):  # noqa: ANN001
+        return FakeCursor(type(self).rows)
 
 
 class FakeAcquire:
@@ -190,3 +211,57 @@ async def test_retry_feeds_previous_sql_and_hint(monkeypatch) -> None:  # noqa: 
     _, sql = await pipeline._generate_sql_with_retry("Q", [table])
     assert "GROUP BY" in sql
     assert "SELECT t.a, SUM(t.a) FROM t" in prompts[1] and "Hint:" in prompts[1]
+
+
+def _pipeline_with_rows(monkeypatch, rows):  # noqa: ANN001, ANN202
+    table = TableDetail(
+        name="orders",
+        description="Orders",
+        business_domain="sales",
+        columns=[ColumnMeta(name="value", data_type="int")],
+        foreign_keys=[],
+    )
+    fake_llm = FakeLLM()
+    pipeline = QueryPipeline(
+        FakeCatalog(table), llm=fake_llm, intent_llm=fake_llm, explanation_llm=fake_llm
+    )
+    monkeypatch.setattr(pipeline, "_pool", FakePool())
+    monkeypatch.setattr(FakeConn, "rows", rows)
+    return pipeline
+
+
+@pytest.mark.asyncio
+async def test_query_returns_first_page_and_keeps_full_result(monkeypatch):
+    from artoo.config import settings
+
+    monkeypatch.setattr(settings, "max_result_rows", 1000)
+    pipeline = _pipeline_with_rows(monkeypatch, [{"value": i} for i in range(120)])
+    response = await pipeline.query("list values", page_size=25)
+    assert response.total_rows == 120
+    assert response.page == 0 and response.page_size == 25
+    assert len(response.rows) == 25
+    assert response.truncated is False
+    stored = pipeline.results.get(response.result_id)
+    assert stored is not None and len(stored.rows) == 120
+
+
+@pytest.mark.asyncio
+async def test_query_marks_truncation_at_row_cap(monkeypatch):
+    from artoo.config import settings
+
+    monkeypatch.setattr(settings, "max_result_rows", 10)
+    pipeline = _pipeline_with_rows(monkeypatch, [{"value": i} for i in range(50)])
+    response = await pipeline.query("list values")
+    assert response.truncated is True
+    assert response.total_rows == 10
+
+
+@pytest.mark.asyncio
+async def test_page_size_is_clamped_to_configured_max(monkeypatch):
+    from artoo.config import settings
+
+    monkeypatch.setattr(settings, "max_result_rows", 1000)
+    monkeypatch.setattr(settings, "result_page_size_max", 30)
+    pipeline = _pipeline_with_rows(monkeypatch, [{"value": i} for i in range(100)])
+    response = await pipeline.query("list values", page_size=500)
+    assert response.page_size == 30 and len(response.rows) == 30

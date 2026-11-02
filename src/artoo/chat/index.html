@@ -298,6 +298,23 @@
       color: var(--muted);
     }
     .result-table-scroll { overflow-x: auto; }
+
+    /* ── pager ── */
+    .pager {
+      display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+      padding: 8px 12px; border-top: 1px solid var(--border); background: var(--surface);
+      font-family: var(--font-mono); font-size: 11px; color: var(--muted);
+    }
+    .pager button, .pager select, .pager a {
+      font: inherit; color: var(--text); background: transparent; text-decoration: none;
+      border: 1px solid var(--border); border-radius: 6px; padding: 3px 9px; cursor: pointer;
+    }
+    .pager button:hover:not(:disabled), .pager a:hover { border-color: var(--muted); }
+    .pager button:disabled { opacity: 0.4; cursor: default; }
+    .pager .spacer { flex: 1; }
+    thead th.sortable { cursor: pointer; user-select: none; }
+    thead th.sortable:hover { color: var(--text); }
+    .result-note { padding: 8px 12px; font-size: 12px; color: var(--muted); border-top: 1px solid var(--border); }
     table { width: 100%; border-collapse: collapse; font-size: 13px; }
     thead th {
       background: var(--surface);
@@ -940,11 +957,11 @@
               btn.classList.add('active');
               dataEl.innerHTML = '';
               if (btn.dataset.view === 'chart') renderD3(dataEl, rows, cs.d3_code, data.column_labels);
-              else renderTable(dataEl, rows, data.column_labels);
+              else renderResultTable(dataEl, data);
             });
           });
         } else {
-          renderTable(dataEl, rows, data.column_labels);
+          renderResultTable(dataEl, data);
         }
       }
 
@@ -1021,6 +1038,97 @@
       });
       html += `</tbody></table></div></div>`;
       container.innerHTML = html;
+    }
+
+
+    // ── paged table (rows live server-side; see /api/results) ─
+    function renderPagedTable(container, data) {
+      const labels = data.column_labels || {};
+      const id = data.result_id;
+      const state = {
+        page: data.page || 0,
+        size: data.page_size || 50,
+        sort: null,
+        total: data.total_rows ?? (data.rows || []).length,
+        truncated: !!data.truncated,
+        rows: data.rows || [],
+      };
+
+      function qs(extra) {
+        const p = new URLSearchParams(extra);
+        if (state.sort) p.set('sort', state.sort);
+        return p.toString();
+      }
+
+      async function load(page) {
+        const res = await fetch(`/api/results/${encodeURIComponent(id)}?${qs({ page, size: state.size })}`);
+        if (!res.ok) {
+          let detail = res.statusText;
+          try { detail = (await res.json()).detail || detail; } catch {}
+          container.querySelector('.result-note, .pager')?.insertAdjacentHTML('beforebegin',
+            `<div class="result-note">${escHtml(String(detail))}</div>`);
+          return;
+        }
+        const body = await res.json();
+        state.page = body.page;
+        state.total = body.total_rows;
+        state.truncated = body.truncated;
+        state.rows = body.rows;
+        draw();
+      }
+
+      function draw() {
+        const rows = state.rows;
+        const cols = rows.length ? Object.keys(rows[0]) : [];
+        const pages = Math.max(1, Math.ceil(state.total / state.size));
+        const from = state.total ? state.page * state.size + 1 : 0;
+        const to = Math.min(state.total, (state.page + 1) * state.size);
+        const [sortCol, sortDir] = state.sort ? state.sort.split(',') : [null, null];
+        const totalLabel = `${state.total.toLocaleString()}${state.truncated ? '+' : ''} row${state.total !== 1 ? 's' : ''}`;
+        let html = `<div class="result-table-wrap">
+          <div class="result-table-header"><span>${totalLabel}</span></div>
+          <div class="result-table-scroll"><table>
+            <thead><tr>${cols.map(c => {
+              const arrow = c === sortCol ? (sortDir === 'desc' ? ' ▼' : ' ▲') : '';
+              return `<th class="sortable" data-col="${escHtml(c)}" title="${escHtml(c)}">${escHtml(labels[c] || c)}${arrow}</th>`;
+            }).join('')}</tr></thead><tbody>`;
+        rows.forEach(row => {
+          html += '<tr>' + cols.map(c => `<td class="${cellClass(row[c])}">${formatVal(row[c])}</td>`).join('') + '</tr>';
+        });
+        html += `</tbody></table></div>`;
+        if (state.truncated) {
+          html += `<div class="result-note">Result capped at ${state.total.toLocaleString()} rows — narrow the question to see the rest.</div>`;
+        }
+        html += `<div class="pager">
+          <button data-act="prev" ${state.page <= 0 ? 'disabled' : ''} aria-label="Previous page">‹ Prev</button>
+          <span>${from.toLocaleString()}–${to.toLocaleString()} of ${state.total.toLocaleString()}${state.truncated ? '+' : ''} · page ${state.page + 1}/${pages}</span>
+          <button data-act="next" ${state.page >= pages - 1 ? 'disabled' : ''} aria-label="Next page">Next ›</button>
+          <select data-act="size" aria-label="Rows per page">${[25, 50, 100, 250].map(n => `<option value="${n}" ${n === state.size ? 'selected' : ''}>${n} / page</option>`).join('')}</select>
+          <span class="spacer"></span>
+          <a href="/api/results/${encodeURIComponent(id)}/export?${qs({ delimiter: 'comma' })}" download>Download CSV</a>
+          <a href="/api/results/${encodeURIComponent(id)}/export?${qs({ delimiter: 'semicolon' })}" download title="Semicolon-separated, for Spanish-locale Excel">CSV ;</a>
+        </div></div>`;
+        container.innerHTML = html;
+
+        container.querySelector('[data-act="prev"]').addEventListener('click', () => load(state.page - 1));
+        container.querySelector('[data-act="next"]').addEventListener('click', () => load(state.page + 1));
+        container.querySelector('[data-act="size"]').addEventListener('change', e => {
+          state.size = parseInt(e.target.value, 10);
+          load(0);
+        });
+        container.querySelectorAll('th.sortable').forEach(th => th.addEventListener('click', () => {
+          const col = th.dataset.col;
+          state.sort = sortCol === col && sortDir !== 'desc' ? `${col},desc` : `${col},asc`;
+          load(0);
+        }));
+      }
+
+      draw();
+    }
+
+    function renderResultTable(container, data) {
+      if (data.result_id) renderPagedTable(container, data);
+      else renderTable(container, data.rows || [], data.column_labels);
     }
 
     // ── markdown ─────────────────────────────────────────────

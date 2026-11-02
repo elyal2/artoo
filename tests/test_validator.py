@@ -8,9 +8,17 @@ def test_blocks_write_operations():
         validate_sql("INSERT INTO x VALUES (1)")
 
 
-def test_adds_limit_when_missing():
+def test_does_not_force_a_limit():
     sql = validate_sql("select * from table_a")
-    assert "LIMIT 100" in sql.upper()
+    assert "LIMIT" not in sql.upper()
+
+
+def test_keeps_limit_the_user_asked_for():
+    assert validate_sql("SELECT * FROM t ORDER BY a LIMIT 10").endswith("LIMIT 10")
+
+
+def test_strips_trailing_semicolon():
+    assert validate_sql("SELECT 1;  ") == "SELECT 1"
 
 
 def test_accepts_cte():

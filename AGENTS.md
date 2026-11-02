@@ -8,7 +8,7 @@
 - `openmetadata/` — bootstrap/crawl helper scripts consumed by the Makefile only; not importable app code.
 - `src/artoo/profile.py` — loads optional `demos/<profile>/profile.yaml` (`unit_patterns` extra column-name→unit rules). Domain knowledge lives there, never in `src/` (enforced by `test_engine_has_no_domain_terms`). `DEMO_PROFILE` default in `config.py` is empty (generic rules only).
 - `demos/<profile>/` — each profile has `profile.yaml`, `init.sh` (Postgres init, mounted as `02-init.sh`) and `seed.py` run inside the container. Available profiles: `hotel` (default), `ecommerce`, `andorra`, `insurance`.
-- `tests/` — 63 pure unit tests; no Docker or network required.
+- `tests/` — 96 pure unit tests; no Docker or network required.
 
 ## Commands
 - **Always `uv`, never `pip`.**
@@ -56,10 +56,12 @@ Intent routing in `pipeline.py`: every request is classified first (`conversatio
 
 SQL path: schema context → LLM SQL generation → `sqlglot` AST column validation (fail-open for unqualified refs) → `EXPLAIN` dry-run → execute. Up to 2 retries; feedback includes the failing SQL, the PG error and a generic hint (`_retry_hint`, e.g. GROUP BY).
 
+Results: the SQL runs once through a cursor capped at `MAX_RESULT_ROWS` (default 50000, `truncated=true` beyond it). The full result is kept in `QueryPipeline.results` (`api/results.py`, LRU + sliding TTL: `RESULT_CACHE_TTL_SECONDS`, `RESULT_CACHE_MAX_ENTRIES`) and `QueryResponse` carries only page 0 (`RESULT_PAGE_SIZE`, max `RESULT_PAGE_SIZE_MAX`) plus `result_id`/`total_rows`. Pages, `sort=col,asc|desc` and the CSV export are served from that cache (404 once expired → ask again). `validate_sql` no longer appends a `LIMIT`; the prompt only allows one when the user asks for top-N. The chart is recommended only when the whole result fits in one page. MCP tool `get_result_page` mirrors the endpoint.
+
 Keep all LLM prompts domain-agnostic — no hardcoded business rules. Rely entirely on schema context, column descriptions, and FK relationships from OpenMetadata.
 
 ## API Endpoints
-`POST /api/query` · `GET /api/tables` · `GET /api/table/{fqn}` · `GET /health` · `/mcp`
+`POST /api/query` · `GET /api/results/{id}?page&size&sort` · `GET /api/results/{id}/export?delimiter&sort` · `GET /api/tables` · `GET /api/table/{fqn}` · `GET /health` · `/mcp`
 
 Static files served from `src/artoo/chat/` at `/` with `no-cache` headers on every response.
 

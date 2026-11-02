@@ -92,7 +92,20 @@ class Settings(BaseSettings):
     # API settings
     api_port: int = Field(default=8000)
     query_timeout_seconds: int = Field(default=10)
-    max_result_rows: int = Field(default=100)
+    max_result_rows: int = Field(
+        default=50_000,
+        description="Hard cap of rows materialised per query; beyond it the result is truncated.",
+    )
+    result_page_size: int = Field(default=50, ge=1, description="Default rows per result page.")
+    result_page_size_max: int = Field(
+        default=250, ge=1, description="Largest page a client may ask."
+    )
+    result_cache_ttl_seconds: int = Field(
+        default=900, ge=1, description="Idle time after which a stored result expires."
+    )
+    result_cache_max_entries: int = Field(
+        default=20, ge=1, description="Stored results kept in memory (least recently used evicted)."
+    )
 
     # Enricher settings
     sample_rows: int = Field(default=5)

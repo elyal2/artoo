@@ -6,17 +6,33 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, cast
 
-from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import Response
+from fastapi.responses import Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 
 from ..catalog.openmetadata import OpenMetadataClient, get_default_client
+from ..config import settings
 from ..logging import configure_logging
-from ..models import ConversationMessage, QueryResponse, TableDetail, TableSummary
+from ..models import (
+    ConversationMessage,
+    QueryResponse,
+    ResultPage,
+    TableDetail,
+    TableSummary,
+)
 from .pipeline import QueryPipeline
+from .results import (
+    DELIMITERS,
+    SortError,
+    StoredResult,
+    csv_chunks,
+    page_of,
+    parse_sort,
+    sorted_rows,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -24,6 +40,7 @@ logger = logging.getLogger(__name__)
 class QueryRequest(BaseModel):
     question: str
     history: list[ConversationMessage] = []
+    page_size: int | None = Field(default=None, ge=1, le=settings.result_page_size_max)
 
 
 @asynccontextmanager
@@ -76,10 +93,72 @@ async def api_query(
     req: QueryRequest, pipeline: QueryPipeline = Depends(get_pipeline)
 ) -> QueryResponse:
     try:
-        return await pipeline.query(req.question, req.history)
+        return await pipeline.query(req.question, req.history, req.page_size)
     except Exception as exc:
         logger.exception("Query failed")
         raise HTTPException(status_code=500, detail=str(exc))
+
+
+def _stored_result(pipeline: QueryPipeline, result_id: str) -> StoredResult:
+    stored = pipeline.results.get(result_id)
+    if stored is None:
+        raise HTTPException(
+            status_code=404, detail="Result expired or not found; ask the question again."
+        )
+    return stored
+
+
+def _sorted(stored: StoredResult, sort: str | None) -> list[dict[str, Any]]:
+    try:
+        return sorted_rows(stored.rows, parse_sort(sort, stored.columns))
+    except SortError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+def _result_page(stored: StoredResult, page: int, size: int, sort: str | None) -> ResultPage:
+    rows = _sorted(stored, sort)
+    return ResultPage(
+        result_id=stored.result_id,
+        page=page,
+        page_size=size,
+        total_rows=len(rows),
+        truncated=stored.truncated,
+        sort=sort,
+        columns=stored.columns,
+        column_labels=stored.column_labels,
+        rows=page_of(rows, page, size),
+    )
+
+
+@app.get("/api/results/{result_id}", response_model=ResultPage)
+async def api_result_page(
+    result_id: str,
+    page: int = Query(default=0, ge=0),
+    size: int = Query(default=settings.result_page_size, ge=1, le=settings.result_page_size_max),
+    sort: str | None = Query(default=None, description="column or column,asc|desc"),
+    pipeline: QueryPipeline = Depends(get_pipeline),
+) -> ResultPage:
+    return _result_page(_stored_result(pipeline, result_id), page, size, sort)
+
+
+@app.get("/api/results/{result_id}/export")
+async def api_result_export(
+    result_id: str,
+    delimiter: str = Query(default="comma", description="comma | semicolon | pipe | tab"),
+    sort: str | None = Query(default=None, description="column or column,asc|desc"),
+    pipeline: QueryPipeline = Depends(get_pipeline),
+) -> StreamingResponse:
+    if delimiter not in DELIMITERS:
+        raise HTTPException(
+            status_code=400, detail=f"delimiter must be one of: {', '.join(DELIMITERS)}"
+        )
+    stored = _stored_result(pipeline, result_id)
+    rows = _sorted(stored, sort)
+    return StreamingResponse(
+        csv_chunks(rows, stored.columns, DELIMITERS[delimiter]),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="artoo-{stored.result_id}.csv"'},
+    )
 
 
 @app.get("/api/tables", response_model=list[TableSummary])
@@ -118,6 +197,21 @@ def create_mcp_app() -> Any:
         pipeline = _get_pipeline_from_state()
         result = await pipeline.query(question)
         return result.model_dump()
+
+    @mcp.tool()
+    async def get_result_page(
+        result_id: str,
+        page: int = 0,
+        size: int = settings.result_page_size,
+        sort: str | None = None,
+    ) -> dict[str, Any]:
+        """Read another page of a previous query_data result (use its result_id)."""
+        size = max(1, min(size, settings.result_page_size_max))
+        try:
+            stored = _stored_result(_get_pipeline_from_state(), result_id)
+            return _result_page(stored, max(page, 0), size, sort).model_dump()
+        except HTTPException as exc:
+            raise ValueError(exc.detail) from exc
 
     @mcp.tool()
     async def list_tables() -> list[dict[str, Any]]:
