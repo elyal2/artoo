@@ -107,6 +107,11 @@ class Settings(BaseSettings):
     result_page_size_max: int = Field(
         default=250, ge=1, description="Largest page a client may ask."
     )
+    chart_max_rows: int = Field(
+        default=500,
+        ge=1,
+        description="Largest result a chart is drawn from; bigger ones show the table only.",
+    )
     result_cache_ttl_seconds: int = Field(
         default=900, ge=1, description="Idle time after which a stored result expires."
     )

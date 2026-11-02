@@ -502,13 +502,13 @@ class QueryPipeline:
 
         column_labels = self._build_column_labels(tables, rows_dict)
 
-        # The chart is drawn from the rows the client holds (one page): only recommend it
-        # when the whole result fits there.
+        # Charts need every row, not one page: send them along (bounded) when a chart is drawn.
         chart_spec = (
             await self._recommend_chart(question, sql, rows_dict, column_labels)
-            if len(rows_dict) <= size
+            if len(rows_dict) <= settings.chart_max_rows
             else None
         )
+        chart_rows = rows_dict if chart_spec and len(rows_dict) > size else None
 
         stored = self.results.put(
             question=question,
@@ -527,6 +527,7 @@ class QueryPipeline:
             confidence=parsed.confidence,
             column_labels=column_labels,
             chart_spec=chart_spec,
+            chart_rows=chart_rows,
             result_id=stored.result_id,
             total_rows=len(rows_dict),
             page=0,

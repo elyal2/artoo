@@ -96,6 +96,7 @@ class QueryResponse(BaseModel):
     confidence: str = "high"
     column_labels: Dict[str, str] = Field(default_factory=dict)
     chart_spec: Optional[ChartSpec] = None
+    chart_rows: Optional[List[Dict[str, Any]]] = None  # all rows, when a chart spans > 1 page
     result_id: Optional[str] = None
     total_rows: int = 0
     page: int = 0

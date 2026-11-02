@@ -294,3 +294,48 @@ def test_schema_context_omits_rules_block_when_none() -> None:
     import asyncio
 
     assert "BUSINESS RULES" not in asyncio.run(pipeline._schema_context([table]))
+
+
+def _with_chart(pipeline, monkeypatch, calls):  # noqa: ANN001, ANN202
+    from artoo.models import ChartSpec
+
+    async def chart(question, sql, rows, labels):  # noqa: ANN001, ANN202
+        calls.append(len(rows))
+        return ChartSpec(chart_type="bar", d3_code="/* chart */")
+
+    monkeypatch.setattr(pipeline, "_recommend_chart", chart)
+
+
+@pytest.mark.asyncio
+async def test_chart_spanning_several_pages_gets_all_rows(monkeypatch):
+    from artoo.config import settings
+
+    monkeypatch.setattr(settings, "max_result_rows", 1000)
+    pipeline = _pipeline_with_rows(monkeypatch, [{"value": i} for i in range(130)])
+    calls: list[int] = []
+    _with_chart(pipeline, monkeypatch, calls)
+    response = await pipeline.query("list values", page_size=50)
+    assert len(response.rows) == 50
+    assert response.chart_spec is not None
+    assert response.chart_rows is not None and len(response.chart_rows) == 130
+
+
+@pytest.mark.asyncio
+async def test_chart_rows_omitted_when_one_page_is_enough(monkeypatch):
+    pipeline = _pipeline_with_rows(monkeypatch, [{"value": i} for i in range(10)])
+    _with_chart(pipeline, monkeypatch, [])
+    response = await pipeline.query("list values", page_size=50)
+    assert response.chart_spec is not None and response.chart_rows is None
+
+
+@pytest.mark.asyncio
+async def test_no_chart_above_chart_max_rows(monkeypatch):
+    from artoo.config import settings
+
+    monkeypatch.setattr(settings, "max_result_rows", 1000)
+    monkeypatch.setattr(settings, "chart_max_rows", 100)
+    pipeline = _pipeline_with_rows(monkeypatch, [{"value": i} for i in range(130)])
+    calls: list[int] = []
+    _with_chart(pipeline, monkeypatch, calls)
+    response = await pipeline.query("list values")
+    assert response.chart_spec is None and response.chart_rows is None and calls == []

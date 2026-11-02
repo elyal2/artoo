@@ -917,6 +917,7 @@
 
       // ── data query response ───────────────────────────────────────────────
       const rows = data.rows || [];
+      const chartRows = data.chart_rows || rows;  // a chart may span more rows than one page
       const cs = data.chart_spec;
       const hasChart = cs && cs.chart_type !== 'none' && cs.chart_type !== 'table' && cs.d3_code;
 
@@ -958,13 +959,13 @@
         if (rows.length) {
         const dataEl = el.querySelector('.result-data');
         if (hasChart) {
-          renderD3(dataEl, rows, cs.d3_code, data.column_labels);
+          renderD3(dataEl, chartRows, cs.d3_code, data.column_labels);
           el.querySelectorAll('.view-btn').forEach(btn => {
             btn.addEventListener('click', () => {
               el.querySelectorAll('.view-btn').forEach(b => b.classList.remove('active'));
               btn.classList.add('active');
               dataEl.innerHTML = '';
-              if (btn.dataset.view === 'chart') renderD3(dataEl, rows, cs.d3_code, data.column_labels);
+              if (btn.dataset.view === 'chart') renderD3(dataEl, chartRows, cs.d3_code, data.column_labels);
               else renderResultTable(dataEl, data);
             });
           });
