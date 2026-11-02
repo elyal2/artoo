@@ -48,6 +48,7 @@
 - `LLM_EXPLANATION_MODEL` — separate optional model for result interpretation; recommend a more capable model for better unit context. Falls back to `LLM_MODEL` if unset.
 - `LLM_CHART_MODEL` — separate optional model for D3 chart generation; recommend a more capable model than `LLM_MODEL` (e.g. Claude Sonnet). Falls back to `LLM_MODEL` if unset.
 - `ENRICHMENT_LLM_MODEL` — separate optional model for enricher; can use cheaper model (Nova Lite) for cost savings. Falls back to `LLM_MODEL` if unset.
+- `ENRICHMENT_COLUMN_BATCH_SIZE` — max columns per enricher LLM call (default 20, 0 = off). Wider tables are split into balanced batches (table-level fields from the first); a batch whose JSON is truncated/invalid is retried in halves.
 - `OPENMETADATA_DB_FILTER` — FQN prefix to scope `list_tables`/`get_table_id` to a specific DB. Unset = all tables.
 
 ## Query Pipeline
