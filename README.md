@@ -255,11 +255,11 @@ uv run mypy src/
 
 ## Notas técnicas
 
-- **OpenMetadata 1.5.8**: versión actualizada con mejor soporte para glossary terms en API. Migración desde 1.2.4 incluye backup automático.
+- **OpenMetadata 2.0.7**: imágenes de servidor e ingestion fijadas en `docker-compose.yml` (OpenSearch 3.4). Desde 1.6 el dominio de una tabla es la lista `domains` (ya no existe `domain`). Incluye un servidor MCP propio en `{OM}/mcp` (Streamable HTTP, JWT de Bot como Bearer).
 - **Inference Profiles en Bedrock**: en regiones EU (`eu-south-2`), usar prefijo `eu.` en model IDs: `eu.amazon.nova-lite-v1:0`, `eu.anthropic.claude-sonnet-4-20250514-v1:0`. Sin prefijo falla con `ValidationException`.
 - **Cache de configuración Docker**: cambios en `.env.local` requieren `docker compose stop <service> && docker compose rm -f <service> && docker compose up -d <service>` para recargar env vars. `docker compose restart` **NO** recarga la configuración de pydantic-settings.
 - **Credenciales AWS en Docker**: los perfiles SSO (`~/.aws`) no están disponibles dentro de los contenedores. Usar `AWS_ACCESS_KEY_ID` + `AWS_SECRET_ACCESS_KEY` directamente en `.env.local`.
-- **Airflow vs CLI**: el contenedor de ingestion usa Airflow 3.x incompatible con el plugin de OpenMetadata 1.5.8. `make crawl` ejecuta `metadata ingest` directamente via CLI.
+- **Airflow vs CLI**: `make crawl` ejecuta `metadata ingest` directamente via CLI dentro del contenedor de ingestion, sin pasar por Airflow (con 1.5.8 el plugin era incompatible con Airflow 3.x; no se ha vuelto a probar la vía Airflow con 2.0.7). La imagen 2.0.7 no trae `envsubst`: las variables de `ingest.yaml` se expanden con Python.
 - **Columnas codificadas**: el enricher detecta columnas con ≤ 20 valores distintos y el LLM documenta cada código con su significado de negocio. Crítico para SQL correcto.
 - **Unidades de medida**: el enricher detecta patrones en nombres de columnas (`*_millones_eur`, `*_pct`, `*_mill`, etc.) y asigna glossary terms automáticamente. Los post-procesadores mejoran las explicaciones añadiendo contexto de unidades.
 - **Governance genérico**: el enricher no asume ningún dominio. Los dominios se infieren del LLM y se crean automáticamente en OpenMetadata. Funciona con cualquier esquema.

@@ -357,13 +357,15 @@ class CatalogWriter:
                     [
                         {
                             "op": "add",
-                            "path": "/domain",
-                            "value": {
-                                "id": domain_id,
-                                "type": "domain",
-                                "name": domain_name,
-                                "fullyQualifiedName": domain_name,
-                            },
+                            "path": "/domains",
+                            "value": [
+                                {
+                                    "id": domain_id,
+                                    "type": "domain",
+                                    "name": domain_name,
+                                    "fullyQualifiedName": domain_name,
+                                }
+                            ],
                         }
                     ],
                 )

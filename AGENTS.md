@@ -75,4 +75,5 @@ Two-step, idempotent:
 - Multi-stage `Dockerfile`: named targets `enricher` and `api`.
 - `postgres/01-om-init.sh` (mounted as `01-om-init.sh`) creates the OM and Airflow roles/DBs; demo `init.sh` must **only** add demo-specific roles/tables — never recreate `openmetadata_user` or `openmetadata_db`.
 - `demos/ecommerce/seed.py` must stay in sync with `demos/ecommerce/init.sh`.
-- OpenMetadata 1.5.8 API: use `?fields=columns,tableConstraints,usageSummary,tags` (removed `domains` field from 1.2.4, changed to singular `domain` but not used).
+- OpenMetadata 2.0.7 (server + ingestion images pinned in `docker-compose.yml`). API: use `?fields=columns,tableConstraints,usageSummary,tags,domains` — `domains` is a list (the singular `domain` no longer exists); patch it with `/domains` and an array value. Read it through `OpenMetadataClient._first_domain_name`.
+- OM 2.0.x ships a built-in MCP server at `{OM}/mcp` (Streamable HTTP, Bot JWT as Bearer) — not used by artoo yet.

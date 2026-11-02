@@ -58,7 +58,7 @@
 
 ## ✅ Completado Recientemente
 
-- [x] Upgrade OpenMetadata 1.2.4 → 1.5.8
+- [x] Upgrade OpenMetadata 1.2.4 → 1.5.8 → 2.0.7 (`domain` → `domains`, ingestion sin `envsubst`)
 - [x] Implementar Strategy 2: Glossary Terms para unidades
 - [x] Fix Bedrock EU inference profiles (prefijo `eu.`)
 - [x] Documentar error de Docker config cache

@@ -81,7 +81,7 @@ class OpenMetadataClient:
         after: str | None = None
         db_filter = settings.openmetadata_db_filter
         while True:
-            url = f"{self.base_url}/api/v1/tables?fields=description,tags,usageSummary,domain&limit=100"
+            url = f"{self.base_url}/api/v1/tables?fields=description,tags,usageSummary,domains&limit=100"
             if db_filter:
                 url += f"&database={quote(db_filter, safe='')}"
             if after:
@@ -94,14 +94,11 @@ class OpenMetadataClient:
                 fqn = item.get("fullyQualifiedName", item.get("name", ""))
                 if any(s in fqn for s in ("information_schema", "pg_catalog")):
                     continue
-                # Extract domain name if present
-                domain_obj = item.get("domain")
-                domain_name = domain_obj.get("name") if domain_obj else None
                 all_items.append(
                     TableSummary(
                         name=fqn,
                         description=item.get("description"),
-                        business_domain=domain_name,
+                        business_domain=self._first_domain_name(item),
                     )
                 )
             paging = payload.get("paging", {})
@@ -113,7 +110,7 @@ class OpenMetadataClient:
     async def get_table(self, fqn: str) -> TableDetail:
         url = (
             f"{self.base_url}/api/v1/tables/name/{fqn}"
-            "?fields=columns,tableConstraints,usageSummary,tags"
+            "?fields=columns,tableConstraints,usageSummary,tags,domains"
         )
         resp = await self._get(url)
         resp.raise_for_status()
@@ -151,9 +148,7 @@ class OpenMetadataClient:
             for c in raw.get("columns", [])
         ]
 
-        # domains is a list in 1.12.x — take the first entry's name
-        domains: list[Any] = raw.get("domains") or []
-        business_domain = self._domain_name(domains[0]) if domains else None
+        business_domain = self._first_domain_name(raw)
 
         return TableDetail(
             name=raw.get("fullyQualifiedName", raw.get("name")),
@@ -298,6 +293,14 @@ class OpenMetadataClient:
         if isinstance(domain, str):
             return domain
         return None
+
+    @classmethod
+    def _first_domain_name(cls, raw: dict[str, Any]) -> str | None:
+        """First domain of an entity: `domains` list (OM >= 1.6), singular `domain` as fallback."""
+        domains: list[Any] = raw.get("domains") or []
+        if domains:
+            return cls._domain_name(domains[0])
+        return cls._domain_name(raw.get("domain"))
 
     async def ensure_classification(
         self, name: str, description: str, mutually_exclusive: bool = False

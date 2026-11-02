@@ -81,7 +81,7 @@ crawl:
 		-e OM_SERVICE_NAME=$${OM_SERVICE_NAME:-artoo-postgres} \
 		-e OM_DATABASE=$${OM_DATABASE:-artoo_demo} \
 		openmetadata_ingestion \
-		bash -c 'envsubst < /opt/openmetadata/ingest.yaml > /tmp/ingest.yaml && metadata ingest -c /tmp/ingest.yaml'
+		bash -c 'python3 -c "import os,sys; sys.stdout.write(os.path.expandvars(sys.stdin.read()))" < /opt/openmetadata/ingest.yaml > /tmp/ingest.yaml && metadata ingest -c /tmp/ingest.yaml'
 
 enrich:
 	docker compose $(COMPOSE_FILES) build artoo-enricher

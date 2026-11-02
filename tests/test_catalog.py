@@ -140,3 +140,25 @@ def test_table_foreign_keys_ignores_other_and_malformed_constraints():
     }
     assert OpenMetadataClient._table_foreign_keys(raw) == []
     assert OpenMetadataClient._table_foreign_keys({"name": "t"}) == []
+
+
+# --- _first_domain_name (OM 2.x `domains` list, singular `domain` fallback) ---
+
+
+def test_first_domain_name_from_domains_list():
+    raw = {"domains": [{"name": "Claims", "id": "a"}, {"name": "Other", "id": "b"}]}
+    assert OpenMetadataClient._first_domain_name(raw) == "Claims"
+
+
+def test_first_domain_name_falls_back_to_singular_domain():
+    assert OpenMetadataClient._first_domain_name({"domain": {"name": "Customer"}}) == "Customer"
+
+
+def test_first_domain_name_prefers_domains_over_domain():
+    raw = {"domains": [{"name": "New"}], "domain": {"name": "Old"}}
+    assert OpenMetadataClient._first_domain_name(raw) == "New"
+
+
+def test_first_domain_name_missing_or_empty():
+    assert OpenMetadataClient._first_domain_name({}) is None
+    assert OpenMetadataClient._first_domain_name({"domains": []}) is None

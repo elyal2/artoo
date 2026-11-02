@@ -312,7 +312,7 @@ uv run python -m artoo.enricher --ossie-only --output ./_ossie/
 
 | Dependencia | Versión | Propósito |
 |---|---|---|
-| OpenMetadata API | 1.5.8 | Escritura de metadatos |
+| OpenMetadata API | 2.0.7 | Escritura de metadatos |
 | AWS Bedrock (Nova Lite) | eu-south-2 | LLM enrichment |
 | asyncpg | ≥0.30 | Stats collection PostgreSQL |
 | httpx | — | Cliente HTTP async |
@@ -837,7 +837,7 @@ MÓDULO F (API + Chat)
 | Kafka no es queryable directamente | Certeza | Alto | Materialización en DuckDB definida en sección 10.4 |
 | Latencia alta en Snowflake para exploración | Media | Medio | Cache de resultados frecuentes; LIMIT agresivo por defecto |
 | Multi-tenancy: credenciales por cliente | Alta | Alto | `connection_secret_id` por asset en OM; adaptador resuelve en runtime |
-| OpenMetadata API cambia entre versiones | Media | Alto | Pin de versión OM 1.5.8; tests de integración por versión |
+| OpenMetadata API cambia entre versiones | Media | Alto | Pin de versión OM 2.0.7; tests de integración por versión |
 | commonQueries demasiado técnicas para routing | Media | Alto | LLM enrichment con `business_domain` como contexto de idioma |
 
 ---

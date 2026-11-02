@@ -91,6 +91,6 @@ Flujo: `make down` (scoped al proyecto, nunca `prune` global) → `make demo-ful
 
 - Sonnet 5.5 en Bedrock EU: disponible (`eu.anthropic.claude-sonnet-5-5`); el ID no lleva fecha ni sufijo de versión, a diferencia de los 4.x.
 - Coste/latencia de Sonnet 5.5 en enrichment masivo → modelo por tarea.
-- OpenMetadata 1.5.8 tarda 3–5 min en arrancar → no afecta al diseño, sí a los tiempos de validación.
+- OpenMetadata tarda 3–5 min en arrancar → no afecta al diseño, sí a los tiempos de validación.
 - Calidad del SQL con esquema más grande (8 tablas, FKs compuestas) → suite de regresión de preguntas.
 - Datos sintéticos de PII: usar solo valores ficticios.
