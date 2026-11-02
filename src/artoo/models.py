@@ -42,6 +42,7 @@ class ColumnEnrichment(BaseModel):
 
 class TableEnrichment(BaseModel):
     table_description: str
+    business_name: Optional[str] = None
     business_domain: Optional[str] = None
     tier: int = Field(default=3, ge=1, le=5)
     columns: Dict[str, ColumnEnrichment]

@@ -296,3 +296,137 @@ def test_engine_has_no_domain_terms() -> None:
             if banned.search(line):
                 offenders.append(f"{f}:{n}: {line.strip()[:80]}")
     assert not offenders, offenders
+
+
+# ---------------------------------------------------------------------------
+# Domain label normalization (models sometimes answer with a sentence)
+# ---------------------------------------------------------------------------
+
+
+def test_normalize_domain_name_keeps_leading_phrase_of_sentence():
+    text = "Insurance distribution – agent/intermediary master data and commission configuration"
+    assert _normalize_domain_name(text) == "Insurance Distribution"
+
+
+def test_normalize_domain_name_drops_parenthetical_and_caps_words():
+    assert _normalize_domain_name("Commercial quoting and policy conversion (SME)") == (
+        "Commercial Quoting And Policy"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Wide tables: column batching and split-on-failure
+# ---------------------------------------------------------------------------
+
+
+def _column_entry(name: str) -> dict[str, object]:
+    return {
+        "description": f"About {name}",
+        "business_name": name.title(),
+        "pii": False,
+        "pii_type": None,
+        "sensitivity": "internal",
+        "example_values": None,
+    }
+
+
+class BatchAwareLLM:
+    """Answers with exactly the columns listed under 'Columns:' in the prompt."""
+
+    def __init__(self, fail_above: int | None = None) -> None:
+        self.calls: list[list[str]] = []
+        self.prompts: list[str] = []
+        self.fail_above = fail_above
+
+    async def complete(self, *, system: str, user: str, **kwargs: object) -> str:  # noqa: ARG002
+        import re
+
+        block = user.split("Columns:\n", 1)[1].split("\n\n", 1)[0]
+        names = re.findall(r"^  - (\w+) \(", block, flags=re.M)
+        self.calls.append(names)
+        self.prompts.append(user)
+        if self.fail_above is not None and len(names) > self.fail_above:
+            return '{"table_description": "Wide table", "columns": {"' + names[0]  # truncated
+        first = "all columns" not in user and "produced elsewhere" not in user
+        return json.dumps(
+            {
+                "table_description": "Wide table" if first else "",
+                "business_name": "Wide Table" if first else None,
+                "business_domain": "Sales" if first else None,
+                "columns": {n: _column_entry(n) for n in names},
+                "suggested_tags": ["wide"] if first else [],
+                "common_queries": [],
+            }
+        )
+
+
+def _wide_context(n: int) -> TableContext:
+    return TableContext(
+        name="wide",
+        columns=[ColumnMeta(name=f"c{i}", data_type="text") for i in range(n)],
+        column_stats={f"c{i}": {"distinct_count": 3} for i in range(n)},
+        sample_rows=[{f"c{i}": i for i in range(n)}],
+    )
+
+
+@pytest.mark.asyncio
+async def test_wide_table_is_split_into_balanced_batches(monkeypatch):
+    from artoo.config import settings
+
+    monkeypatch.setattr(settings, "enrichment_column_batch_size", 4)
+    llm = BatchAwareLLM()
+    result = await SemanticEnricher(llm_client=llm).enrich(_wide_context(10))
+    assert [len(c) for c in llm.calls] == [4, 3, 3]
+    assert set(result.columns) == {f"c{i}" for i in range(10)}
+    assert result.table_description == "Wide table"
+    assert result.business_name == "Wide Table"
+    assert result.business_domain == "Sales"
+    # later batches get told the table-level fields come from elsewhere
+    assert "produced elsewhere" not in llm.prompts[0]
+    assert "produced elsewhere" in llm.prompts[1]
+    # each prompt only carries stats/samples of its own columns
+    assert "c9" not in llm.prompts[0].split("Column statistics")[1]
+
+
+@pytest.mark.asyncio
+async def test_narrow_table_is_a_single_call(monkeypatch):
+    from artoo.config import settings
+
+    monkeypatch.setattr(settings, "enrichment_column_batch_size", 20)
+    llm = BatchAwareLLM()
+    await SemanticEnricher(llm_client=llm).enrich(_wide_context(12))
+    assert len(llm.calls) == 1
+    assert "columns in total" not in llm.prompts[0]
+
+
+@pytest.mark.asyncio
+async def test_batching_disabled_with_zero(monkeypatch):
+    from artoo.config import settings
+
+    monkeypatch.setattr(settings, "enrichment_column_batch_size", 0)
+    llm = BatchAwareLLM()
+    await SemanticEnricher(llm_client=llm).enrich(_wide_context(50))
+    assert len(llm.calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_truncated_json_splits_batch_instead_of_dropping_columns(monkeypatch):
+    from artoo.config import settings
+
+    monkeypatch.setattr(settings, "enrichment_column_batch_size", 0)
+    llm = BatchAwareLLM(fail_above=3)
+    result = await SemanticEnricher(llm_client=llm).enrich(_wide_context(8))
+    assert set(result.columns) == {f"c{i}" for i in range(8)}
+    assert result.table_description == "Wide table"
+    assert max(len(c) for c in llm.calls[1:]) <= 4  # 8 -> 4 + 4
+
+
+@pytest.mark.asyncio
+async def test_single_column_failure_falls_back_to_partial(monkeypatch):
+    from artoo.config import settings
+
+    monkeypatch.setattr(settings, "enrichment_column_batch_size", 0)
+    llm = BatchAwareLLM(fail_above=0)
+    result = await SemanticEnricher(llm_client=llm).enrich(_wide_context(1))
+    assert result.columns == {}
+    assert result.table_description  # partial description kept

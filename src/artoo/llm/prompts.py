@@ -9,7 +9,8 @@ ANALYSIS ORDER — think in this sequence:
 Respond with JSON:
 {
   "table_description": "Clear, specific business description reflecting ACTUAL data patterns. NOT generic. Example: 'Orders including dates, amounts, and status codes' is good. 'Order table' is bad.",
-  "business_domain": "Specific business domain inferred from column VALUES, not from table name. Example: infer the domain from the data patterns and coded values, not from the table name itself.",
+  "business_name": "Short human-readable name of the table, 2-5 words (for example 'Customer Orders'). A label, not a description.",
+  "business_domain": "Short domain label: 1-3 words, Title Case, no punctuation and no explanation (for example 'Sales' or 'Customer Support'). Infer it from the column VALUES and patterns, not from the table name. Choose a broad label that other tables of the same database would share; never write a sentence.",
   "tier": 1-5,
   "columns": {
     "<column_name>": {

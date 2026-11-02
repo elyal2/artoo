@@ -182,10 +182,9 @@ class CatalogWriter:
             {"op": "add", "path": "/description", "value": enrichment.table_description},
         ]
 
-        # Set table displayName from business domain if available
-        if enrichment.business_domain:
-            display_name = _normalize_domain_name(enrichment.business_domain)
-            ops.append({"op": "add", "path": "/displayName", "value": display_name})
+        # Human-readable table name (never the domain: that is a separate OM entity)
+        if enrichment.business_name:
+            ops.append({"op": "add", "path": "/displayName", "value": enrichment.business_name})
 
         # Get column indices once if we have column enrichments
         col_indices: dict[str, int] = {}
@@ -430,7 +429,12 @@ def _slug_to_pascal(text: str) -> str:
     return "".join(part[:1].upper() + part[1:] for part in parts if part)
 
 
+_MAX_DOMAIN_WORDS = 4
+
+
 def _normalize_domain_name(text: str) -> str:
-    cleaned = re.sub(r"[_-]+", " ", text).strip()
+    """Title-cased short label. Models sometimes return a sentence: keep its leading phrase."""
+    head = re.split(r"\s[-–—]\s|[/(:;,]", text, maxsplit=1)[0]
+    cleaned = re.sub(r"[_-]+", " ", head).strip()
     cleaned = re.sub(r"\s+", " ", cleaned)
-    return cleaned.title()
+    return " ".join(cleaned.split(" ")[:_MAX_DOMAIN_WORDS]).title()

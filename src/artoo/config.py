@@ -46,6 +46,13 @@ class Settings(BaseSettings):
         default=8192,
         description="Max tokens for enricher LLM responses (wide tables need long JSON).",
     )
+    enrichment_column_batch_size: int = Field(
+        default=20,
+        description=(
+            "Max columns described per enricher LLM call; wider tables are split into balanced "
+            "batches so the JSON never hits the output limit. 0 disables batching."
+        ),
+    )
     llm_chart_max_tokens: int = Field(
         default=4096,
         description="Max tokens for chart LLM responses (needs more for D3 code generation).",
