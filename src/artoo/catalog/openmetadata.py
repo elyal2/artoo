@@ -12,6 +12,8 @@ from ..models import ColumnMeta, SchemaColumn, TableDetail, TableSummary
 
 logger = logging.getLogger(__name__)
 
+BUSINESS_RULES_PROPERTY = "businessRules"
+
 
 async def _login_token(base_url: str) -> str:
     """Obtain a JWT token via admin login (default OM credentials)."""
@@ -110,7 +112,7 @@ class OpenMetadataClient:
     async def get_table(self, fqn: str) -> TableDetail:
         url = (
             f"{self.base_url}/api/v1/tables/name/{fqn}"
-            "?fields=columns,tableConstraints,usageSummary,tags,domains"
+            "?fields=columns,tableConstraints,usageSummary,tags,domains,extension"
         )
         resp = await self._get(url)
         resp.raise_for_status()
@@ -155,6 +157,7 @@ class OpenMetadataClient:
             description=raw.get("description"),
             display_name=raw.get("displayName"),
             business_domain=business_domain,
+            business_rules=(raw.get("extension") or {}).get(BUSINESS_RULES_PROPERTY),
             columns=cols,
             foreign_keys=self._table_foreign_keys(raw)
             + [fk for fk in (self._fk_name(c) for c in raw.get("columns", [])) if fk],
@@ -252,6 +255,17 @@ class OpenMetadataClient:
         url = f"{self.base_url}/api/v1/tables/name/{fqn}"
         resp = await self._patch(url, payload)
         resp.raise_for_status()
+
+    async def merge_table_extension(self, fqn: str, updates: dict[str, str]) -> None:
+        """Set custom properties without dropping the ones already present (a JSON patch on
+        /extension replaces the whole object)."""
+        url = f"{self.base_url}/api/v1/tables/name/{fqn}?fields=extension"
+        resp = await self._get(url)
+        resp.raise_for_status()
+        current: dict[str, Any] = resp.json().get("extension") or {}
+        await self.patch_table(
+            fqn, [{"op": "add", "path": "/extension", "value": {**current, **updates}}]
+        )
 
     async def get_table_id(self, fqn: str) -> str:
         """Get table UUID by FQN lookup, falling back to name search within the configured db filter."""
@@ -541,6 +555,18 @@ class OpenMetadataClient:
                 )
             except Exception as exc:
                 logger.warning("Failed to create unit term %s: %s", term_name, exc)
+
+        try:
+            await self.register_table_custom_property(
+                BUSINESS_RULES_PROPERTY,
+                "Business rules that must be applied by default when querying this table "
+                "(e.g. which row version is current, what marks a record as valid). "
+                "Written from client documentation by the ARTOO catalog enricher.",
+            )
+        except Exception as exc:
+            logger.warning(
+                "Taxonomy bootstrap step failed (businessRules custom property): %s", exc
+            )
 
         try:
             await self.register_table_custom_property(

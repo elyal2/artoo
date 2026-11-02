@@ -126,6 +126,7 @@ class TableDetail(BaseModel):
     description: Optional[str] = None
     display_name: Optional[str] = None
     business_domain: Optional[str] = None
+    business_rules: Optional[str] = None
     columns: List[ColumnMeta]
     foreign_keys: List[str] = Field(default_factory=list)
 

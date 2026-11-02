@@ -271,3 +271,26 @@ async def test_page_size_is_clamped_to_configured_max(monkeypatch):
     pipeline = _pipeline_with_rows(monkeypatch, [{"value": i} for i in range(100)])
     response = await pipeline.query("list values", page_size=500)
     assert response.page_size == 30 and len(response.rows) == 30
+
+
+def test_schema_context_includes_business_rules() -> None:
+    table = TableDetail(
+        name="svc.db.s.quotes",
+        description="Quotes",
+        business_rules="- Current row = highest version per quote id.",
+        columns=[ColumnMeta(name="id", data_type="int")],
+    )
+    pipeline = QueryPipeline.__new__(QueryPipeline)
+    import asyncio
+
+    context = asyncio.run(pipeline._schema_context([table]))
+    assert "BUSINESS RULES (apply by default):" in context
+    assert "highest version per quote id" in context
+
+
+def test_schema_context_omits_rules_block_when_none() -> None:
+    table = TableDetail(name="t", description="d", columns=[ColumnMeta(name="id", data_type="int")])
+    pipeline = QueryPipeline.__new__(QueryPipeline)
+    import asyncio
+
+    assert "BUSINESS RULES" not in asyncio.run(pipeline._schema_context([table]))

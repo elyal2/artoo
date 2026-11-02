@@ -1,3 +1,5 @@
+import pytest
+
 from artoo.catalog.openmetadata import OpenMetadataClient
 from artoo.models import TableSummary
 
@@ -162,3 +164,81 @@ def test_first_domain_name_prefers_domains_over_domain():
 def test_first_domain_name_missing_or_empty():
     assert OpenMetadataClient._first_domain_name({}) is None
     assert OpenMetadataClient._first_domain_name({"domains": []}) is None
+
+
+# --- business rules / extension merge ---
+
+
+class _FakeResponse:
+    def __init__(self, payload):  # noqa: ANN001
+        self._payload = payload
+        self.status_code = 200
+
+    def raise_for_status(self) -> None:
+        return None
+
+    def json(self):  # noqa: ANN201
+        return self._payload
+
+
+@pytest.mark.asyncio
+async def test_merge_table_extension_keeps_existing_properties(monkeypatch):
+    client = OpenMetadataClient("http://om", api_token="t")
+    patches: list = []
+
+    async def fake_get(url):  # noqa: ANN001, ANN202
+        return _FakeResponse({"extension": {"commonQueries": "- q1"}})
+
+    async def fake_patch(fqn, payload):  # noqa: ANN001, ANN202
+        patches.append((fqn, payload))
+
+    monkeypatch.setattr(client, "_get", fake_get)
+    monkeypatch.setattr(client, "patch_table", fake_patch)
+    await client.merge_table_extension("svc.db.s.t", {"businessRules": "- latest version"})
+    assert patches == [
+        (
+            "svc.db.s.t",
+            [
+                {
+                    "op": "add",
+                    "path": "/extension",
+                    "value": {"commonQueries": "- q1", "businessRules": "- latest version"},
+                }
+            ],
+        )
+    ]
+
+
+@pytest.mark.asyncio
+async def test_merge_table_extension_without_existing_extension(monkeypatch):
+    client = OpenMetadataClient("http://om", api_token="t")
+    patches: list = []
+
+    async def fake_get(url):  # noqa: ANN001, ANN202
+        return _FakeResponse({})
+
+    async def fake_patch(fqn, payload):  # noqa: ANN001, ANN202
+        patches.append(payload)
+
+    monkeypatch.setattr(client, "_get", fake_get)
+    monkeypatch.setattr(client, "patch_table", fake_patch)
+    await client.merge_table_extension("t", {"businessRules": "r"})
+    assert patches[0][0]["value"] == {"businessRules": "r"}
+
+
+@pytest.mark.asyncio
+async def test_get_table_reads_business_rules(monkeypatch):
+    client = OpenMetadataClient("http://om", api_token="t")
+
+    async def fake_get(url):  # noqa: ANN001, ANN202
+        return _FakeResponse(
+            {
+                "fullyQualifiedName": "svc.db.s.t",
+                "columns": [],
+                "extension": {"businessRules": "- use the latest version"},
+            }
+        )
+
+    monkeypatch.setattr(client, "_get", fake_get)
+    table = await client.get_table("svc.db.s.t")
+    assert table.business_rules == "- use the latest version"

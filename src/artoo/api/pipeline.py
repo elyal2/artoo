@@ -173,6 +173,8 @@ class QueryPipeline:
             lines = [f"TABLE: {short_name} — {table.description or ''}"]
             if table.business_domain:
                 lines.append(f"Business domain: {table.business_domain}")
+            if table.business_rules:
+                lines.append(f"BUSINESS RULES (apply by default):\n{table.business_rules}")
             lines.append("COLUMNS:")
             for col in table.columns:
                 line = f"  - {col.name} ({col.data_type})"

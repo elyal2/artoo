@@ -375,16 +375,7 @@ class CatalogWriter:
         if enrichment.common_queries:
             try:
                 common_queries = "\n".join(f"- {q}" for q in enrichment.common_queries)
-                await self.om.patch_table(
-                    table_fqn,
-                    [
-                        {
-                            "op": "add",
-                            "path": "/extension",
-                            "value": {"commonQueries": common_queries},
-                        }
-                    ],
-                )
+                await self.om.merge_table_extension(table_fqn, {"commonQueries": common_queries})
             except Exception as exc:
                 logger.warning("Could not set custom properties for %s: %s", table_fqn, exc)
 
